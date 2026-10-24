@@ -1,22 +1,39 @@
 package handler
 
 import (
-	"context"
 	"net/http"
 
 	"uuid"
 
-	"github.com/KEBABSELLER6/embeddings/internal/common"
+	"github.com/KEBABSELLER6/embeddings/internal/logging"
 )
+
+const maxCorrelationIDLen = 128
+
+func validCorrelationID(id string) bool {
+	if id == "" || len(id) > maxCorrelationIDLen {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case c == '-', c == '_', c == '.':
+		default:
+			return false
+		}
+	}
+	return true
+}
 
 func CorrelationID(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Correlation-ID")
-		if id == "" {
+		if !validCorrelationID(id) {
 			id = uuid.NewV7().String()
 		}
 
-		ctx := context.WithValue(r.Context(), common.CorrelationKey, id)
+		ctx := logging.WithCorrelationID(r.Context(), id)
 		w.Header().Set("X-Correlation-ID", id)
 		next(w, r.WithContext(ctx))
 	}

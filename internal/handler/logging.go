@@ -4,8 +4,6 @@ import (
 	"log/slog"
 	"net/http"
 	"time"
-
-	"github.com/KEBABSELLER6/embeddings/internal/common"
 )
 
 type LoggingHandler struct {
@@ -34,12 +32,11 @@ func (h *LoggingHandler) Logging(next func(w http.ResponseWriter, r *http.Reques
 		next(rw, r)
 
 		duration := time.Since(start)
-		h.slog.Info("request",
+		h.slog.InfoContext(r.Context(), "request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rw.status,
 			"duration_ms", duration.Milliseconds(),
-			"correlation_id", common.CorrelationIDFromContext(r.Context()),
 		)
 	}
 }

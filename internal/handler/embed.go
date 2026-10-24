@@ -15,10 +15,11 @@ type EmbeddingService interface {
 
 type EmbeddingHandler struct {
 	service EmbeddingService
+	eh      *ErrorHandler
 }
 
-func NewEmbeddingHandler(service EmbeddingService) *EmbeddingHandler {
-	return &EmbeddingHandler{service: service}
+func NewEmbeddingHandler(service EmbeddingService, eh *ErrorHandler) *EmbeddingHandler {
+	return &EmbeddingHandler{service: service, eh: eh}
 }
 
 type EmbeddingRequest struct {
@@ -31,24 +32,24 @@ func (h *EmbeddingHandler) HandleEmbeddingRequest(w http.ResponseWriter, r *http
 	var b EmbeddingRequest
 	err := json.UnmarshalRead(r.Body, &b)
 	if err != nil {
-		HandleError(w, r, fmt.Errorf("%w: %w", common.ErrInvalidInput, err))
+		h.eh.HandleError(w, r, fmt.Errorf("%w: %w", common.ErrInvalidInput, err))
 		return
 	}
 
 	if len(b.Input) == 0 || len(b.Input) > 2048 {
-		HandleError(w, r, common.ErrInvalidInput)
+		h.eh.HandleError(w, r, common.ErrInvalidInput)
 		return
 	}
 
 	embeddings, err := h.service.Embed(r.Context(), b.Input)
 	if err != nil {
-		HandleError(w, r, err)
+		h.eh.HandleError(w, r, err)
 		return
 	}
 
 	out, err := json.Marshal(embeddings)
 	if err != nil {
-		HandleError(w, r, fmt.Errorf("internal error: %v", err))
+		h.eh.HandleError(w, r, fmt.Errorf("internal error: %v", err))
 		return
 	}
 

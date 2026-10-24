@@ -9,19 +9,28 @@ import (
 )
 
 type Provider string
+type LogFormat string
 
 const ProviderOllama Provider = "ollama"
+const LogFormatJSON LogFormat = "json"
+const LogFormatText LogFormat = "text"
 
 type Config struct {
 	Port        string
 	MaxBodySize int64
 	Provider    Provider
 	Ollama      *OllamaConfig
+	Log         LogConfig
 }
 
 type OllamaConfig struct {
 	Model    string
 	Endpoint string
+}
+
+type LogConfig struct {
+	Level  slog.Level
+	Format LogFormat
 }
 
 func Configure() (*Config, error) {
@@ -44,7 +53,6 @@ func Configure() (*Config, error) {
 
 		maxBodySize = m
 	} else {
-		slog.Debug("no value provided for MAX_BODY_SIZE defaulting to 512 000")
 		maxBodySize = 512000
 	}
 
@@ -78,11 +86,33 @@ func Configure() (*Config, error) {
 		return nil, fmt.Errorf("unsupported PROVIDER %q", prvdr)
 	}
 
+	logLevel := os.Getenv("LOG_LEVEL")
+	if logLevel == "" {
+		logLevel = "info"
+	}
+	var lvl slog.Level
+	err := lvl.UnmarshalText([]byte(logLevel))
+	if err != nil {
+		return nil, fmt.Errorf("unsupported LOG_LEVEL: %q", logLevel)
+	}
+
+	logFormat := os.Getenv("LOG_FORMAT")
+	var format LogFormat
+	switch logFormat {
+	case string(LogFormatJSON):
+		format = LogFormatJSON
+	case "", string(LogFormatText):
+		format = LogFormatText
+	default:
+		return nil, fmt.Errorf("unsupported LOG_FORMAT: %q", logFormat)
+	}
+
 	config := &Config{
 		Port:        port,
 		MaxBodySize: maxBodySize,
 		Provider:    provider,
 		Ollama:      ollamaConfig,
+		Log:         LogConfig{Format: format, Level: lvl},
 	}
 
 	return config, nil

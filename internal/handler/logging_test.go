@@ -7,8 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/KEBABSELLER6/embeddings/internal/common"
+	"github.com/KEBABSELLER6/embeddings/internal/logging"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type captureHandler struct {
@@ -25,36 +26,36 @@ func (h *captureHandler) Handle(_ context.Context, r slog.Record) error {
 
 func TestLoggingMiddleware(t *testing.T) {
 	capture := &captureHandler{}
-	logger := slog.New(capture)
+	// Wrapped like in main, so the correlation id comes from the request context.
+	logger := slog.New(logging.NewContextHandler(capture))
 	h := &LoggingHandler{slog: logger}
 
-	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	ctx := context.WithValue(req.Context(), common.CorrelationKey, "test-correlation-id")
-	req = req.WithContext(ctx)
+	req := newRequestWithCorrelationID(http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()
 
 	handler := h.Logging(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
+		w.WriteHeader(http.StatusTeapot)
 	})
 	handler.ServeHTTP(rr, req)
 
-	assert.Len(t, capture.records, 1)
+	require.Len(t, capture.records, 1)
 	record := capture.records[0]
 	assert.Equal(t, "request", record.Message)
 
+	attrs := map[string]slog.Value{}
 	record.Attrs(func(a slog.Attr) bool {
-		switch a.Key {
-		case "method":
-			assert.Equal(t, "GET", a.Value.String())
-		case "path":
-			assert.Equal(t, "/healthz", a.Value.String())
-		case "status":
-			assert.Equal(t, int64(200), a.Value.Int64())
-		case "duration_ms":
-			assert.GreaterOrEqual(t, a.Value.Int64(), int64(0))
-		case "correlation_id":
-			assert.NotEmpty(t, a.Value.String())
-		}
+		attrs[a.Key] = a.Value
 		return true
 	})
+
+	require.Contains(t, attrs, "duration_ms")
+	assert.GreaterOrEqual(t, attrs["duration_ms"].Int64(), int64(0))
+	delete(attrs, "duration_ms")
+
+	assert.Equal(t, map[string]slog.Value{
+		"method":         slog.StringValue(http.MethodGet),
+		"path":           slog.StringValue("/healthz"),
+		"status":         slog.IntValue(http.StatusTeapot),
+		"correlation_id": slog.StringValue(testCorrelationID),
+	}, attrs)
 }

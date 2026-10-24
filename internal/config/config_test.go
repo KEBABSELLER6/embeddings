@@ -1,6 +1,7 @@
 package config
 
 import (
+	"log/slog"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,6 +14,8 @@ var envKeys = []string{
 	"PROVIDER",
 	"OLLAMA_MODEL",
 	"OLLAMA_ENDPOINT_URL",
+	"LOG_LEVEL",
+	"LOG_FORMAT",
 }
 
 // setEnv clears every variable Configure reads, then applies env, so a test
@@ -40,6 +43,22 @@ func TestConfigure(t *testing.T) {
 		return env
 	}
 
+	defaultLog := LogConfig{Level: slog.LevelInfo, Format: LogFormatText}
+
+	// defaultOllamaConfig is what ollamaEnv(nil) produces, with log settings swapped in.
+	defaultOllamaConfig := func(log LogConfig) *Config {
+		return &Config{
+			Port:        "8080",
+			MaxBodySize: 512000,
+			Provider:    ProviderOllama,
+			Ollama: &OllamaConfig{
+				Model:    "nomic-embed-text",
+				Endpoint: "http://localhost:11434/api/embed",
+			},
+			Log: log,
+		}
+	}
+
 	tests := []struct {
 		name    string
 		env     map[string]string
@@ -57,6 +76,7 @@ func TestConfigure(t *testing.T) {
 					Model:    "nomic-embed-text",
 					Endpoint: "http://localhost:11434/api/embed",
 				},
+				Log: defaultLog,
 			},
 		},
 		{
@@ -70,6 +90,7 @@ func TestConfigure(t *testing.T) {
 					Model:    "nomic-embed-text",
 					Endpoint: "http://localhost:11434/api/embed",
 				},
+				Log: defaultLog,
 			},
 		},
 		{
@@ -86,7 +107,53 @@ func TestConfigure(t *testing.T) {
 					Model:    "mxbai-embed-large",
 					Endpoint: "http://ollama:11434/api/embed",
 				},
+				Log: defaultLog,
 			},
+		},
+		{
+			name: "debug log level",
+			env:  ollamaEnv(map[string]string{"LOG_LEVEL": "debug"}),
+			want: defaultOllamaConfig(LogConfig{Level: slog.LevelDebug, Format: LogFormatText}),
+		},
+		{
+			name: "log level is case insensitive",
+			env:  ollamaEnv(map[string]string{"LOG_LEVEL": "DEBUG"}),
+			want: defaultOllamaConfig(LogConfig{Level: slog.LevelDebug, Format: LogFormatText}),
+		},
+		{
+			name: "warn log level",
+			env:  ollamaEnv(map[string]string{"LOG_LEVEL": "warn"}),
+			want: defaultOllamaConfig(LogConfig{Level: slog.LevelWarn, Format: LogFormatText}),
+		},
+		{
+			name: "error log level",
+			env:  ollamaEnv(map[string]string{"LOG_LEVEL": "error"}),
+			want: defaultOllamaConfig(LogConfig{Level: slog.LevelError, Format: LogFormatText}),
+		},
+		{
+			name: "json log format",
+			env:  ollamaEnv(map[string]string{"LOG_FORMAT": "json"}),
+			want: defaultOllamaConfig(LogConfig{Level: slog.LevelInfo, Format: LogFormatJSON}),
+		},
+		{
+			name: "explicit text log format",
+			env:  ollamaEnv(map[string]string{"LOG_FORMAT": "text"}),
+			want: defaultOllamaConfig(defaultLog),
+		},
+		{
+			name:    "log level is unknown",
+			env:     ollamaEnv(map[string]string{"LOG_LEVEL": "verbose"}),
+			wantErr: `unsupported LOG_LEVEL: "verbose"`,
+		},
+		{
+			name:    "log format is unknown",
+			env:     ollamaEnv(map[string]string{"LOG_FORMAT": "xml"}),
+			wantErr: `unsupported LOG_FORMAT: "xml"`,
+		},
+		{
+			name:    "log format is case sensitive",
+			env:     ollamaEnv(map[string]string{"LOG_FORMAT": "JSON"}),
+			wantErr: `unsupported LOG_FORMAT: "JSON"`,
 		},
 		{
 			name:    "body size is not a number",

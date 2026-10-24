@@ -2,9 +2,9 @@ package handler
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 type fakeEmbeddingService struct {
@@ -29,8 +30,6 @@ func (f *fakeEmbeddingService) Embed(_ context.Context, input []string) (*common
 }
 
 func TestHandleEmbeddingRequest(t *testing.T) {
-	slog.SetDefault(slog.New(slog.DiscardHandler))
-
 	okResp := &common.EmbeddingResponse{
 		Model:      "test-model",
 		Embeddings: [][]float32{{0.5, 0.25}, {1, 2}},
@@ -60,35 +59,35 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 			body:        `{nope`,
 			svc:         &fakeEmbeddingService{},
 			wantStatus:  http.StatusBadRequest,
-			wantErrBody: "invalid input\n",
+			wantErrBody: "invalid input",
 		},
 		{
 			name:        "empty body",
 			body:        ``,
 			svc:         &fakeEmbeddingService{},
 			wantStatus:  http.StatusBadRequest,
-			wantErrBody: "invalid input\n",
+			wantErrBody: "invalid input",
 		},
 		{
 			name:        "empty input list",
 			body:        `{"input":[]}`,
 			svc:         &fakeEmbeddingService{},
 			wantStatus:  http.StatusBadRequest,
-			wantErrBody: "invalid input\n",
+			wantErrBody: "invalid input",
 		},
 		{
 			name:        "missing input field",
 			body:        `{}`,
 			svc:         &fakeEmbeddingService{},
 			wantStatus:  http.StatusBadRequest,
-			wantErrBody: "invalid input\n",
+			wantErrBody: "invalid input",
 		},
 		{
 			name:        "too many inputs",
 			body:        `{"input":[` + strings.TrimSuffix(strings.Repeat(`"a",`, 2049), ",") + `]}`,
 			svc:         &fakeEmbeddingService{},
 			wantStatus:  http.StatusBadRequest,
-			wantErrBody: "invalid input\n",
+			wantErrBody: "invalid input",
 		},
 		{
 			name:       "maximum number of inputs is accepted",
@@ -106,7 +105,7 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 			wantStatus:  http.StatusBadGateway,
 			wantCalls:   1,
 			wantInput:   []string{"hi"},
-			wantErrBody: "embedding backend unavailable\n",
+			wantErrBody: "embedding backend unavailable",
 		},
 		{
 			name:        "wrapped upstream failure",
@@ -115,7 +114,7 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 			wantStatus:  http.StatusBadGateway,
 			wantCalls:   1,
 			wantInput:   []string{"hi"},
-			wantErrBody: "embedding backend unavailable\n",
+			wantErrBody: "embedding backend unavailable",
 		},
 		{
 			name:        "invalid output from backend",
@@ -124,7 +123,7 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 			wantStatus:  http.StatusBadGateway,
 			wantCalls:   1,
 			wantInput:   []string{"hi"},
-			wantErrBody: "invalid output\n",
+			wantErrBody: "invalid output",
 		},
 		{
 			name:        "backend timeout",
@@ -133,7 +132,7 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 			wantStatus:  http.StatusGatewayTimeout,
 			wantCalls:   1,
 			wantInput:   []string{"hi"},
-			wantErrBody: "timeout\n",
+			wantErrBody: "timeout",
 		},
 		{
 			name:        "unknown service error",
@@ -142,14 +141,14 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 			wantStatus:  http.StatusInternalServerError,
 			wantCalls:   1,
 			wantInput:   []string{"hi"},
-			wantErrBody: "internal error\n",
+			wantErrBody: "internal error",
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := NewEmbeddingHandler(tt.svc)
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/embed", strings.NewReader(tt.body))
+			h := NewEmbeddingHandler(tt.svc, newTestErrorHandler())
+			req := newRequestWithCorrelationID(http.MethodPost, "/api/v1/embed", strings.NewReader(tt.body))
 			rr := httptest.NewRecorder()
 
 			h.HandleEmbeddingRequest(rr, req)
@@ -163,25 +162,32 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 				assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 			}
 			if tt.wantErrBody != "" {
-				assert.Equal(t, tt.wantErrBody, rr.Body.String())
+				assert.Equal(t, tt.wantStatus, rr.Code)
+				assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+				var got ErrorResponse
+				require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+				assert.Equal(t, ErrorResponse{Message: tt.wantErrBody, CorrelationID: testCorrelationID}, got)
 			}
 		})
 	}
 }
 
 func TestHandleEmbeddingRequestBodyTooLarge(t *testing.T) {
-	slog.SetDefault(slog.New(slog.DiscardHandler))
-
 	svc := &fakeEmbeddingService{}
-	h := NewEmbeddingHandler(svc)
+	h := NewEmbeddingHandler(svc, newTestErrorHandler())
 	limited := NewMaxSizeHandler(10).LimitBodySize(h.HandleEmbeddingRequest)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/embed", strings.NewReader(`{"input":["hello","world"]}`))
+	req := newRequestWithCorrelationID(http.MethodPost, "/api/v1/embed", strings.NewReader(`{"input":["hello","world"]}`))
 	rr := httptest.NewRecorder()
 
 	limited.ServeHTTP(rr, req)
 
-	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
-	assert.Equal(t, "request too large\n", rr.Body.String())
 	assert.Zero(t, svc.calls)
+	assert.Equal(t, http.StatusRequestEntityTooLarge, rr.Code)
+	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
+
+	var got ErrorResponse
+	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
+	assert.Equal(t, ErrorResponse{Message: "request too large", CorrelationID: testCorrelationID}, got)
 }

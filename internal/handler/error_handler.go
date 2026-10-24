@@ -2,29 +2,58 @@ package handler
 
 import (
 	"context"
+	"encoding/json/v2"
 	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/KEBABSELLER6/embeddings/internal/common"
+	"github.com/KEBABSELLER6/embeddings/internal/logging"
 )
 
-func HandleError(w http.ResponseWriter, r *http.Request, err error) {
-	slog.Error("request failed", "err", err, "correlation_id", common.CorrelationIDFromContext(r.Context()))
+type ErrorHandler struct {
+	logger *slog.Logger
+}
+
+func NewErrorHandler(logger *slog.Logger) *ErrorHandler {
+	return &ErrorHandler{logger: logger}
+}
+
+type ErrorResponse struct {
+	Message       string `json:"message"`
+	CorrelationID string `json:"correlation_id"`
+}
+
+func buildError(w http.ResponseWriter, msg string, correlationID string, status int) {
+	w.Header().Set("Content-Type", "application/json")
+	resp := &ErrorResponse{Message: msg, CorrelationID: correlationID}
+	out, err := json.Marshal(resp)
+	if err != nil {
+		w.WriteHeader(http.StatusInternalServerError)
+		w.Write([]byte(`{"message":"internal error"}`))
+		return
+	}
+	w.WriteHeader(status)
+	w.Write(out)
+}
+
+func (h *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, err error) {
+	correlationID := logging.CorrelationIDFromContext(r.Context())
+	h.logger.ErrorContext(r.Context(), "request failed", "err", err)
 
 	var maxErr *http.MaxBytesError
 	switch {
 	case errors.As(err, &maxErr):
-		http.Error(w, "request too large", http.StatusRequestEntityTooLarge)
+		buildError(w, "request too large", correlationID, http.StatusRequestEntityTooLarge)
 	case errors.Is(err, common.ErrInvalidInput):
-		http.Error(w, "invalid input", http.StatusBadRequest)
+		buildError(w, "invalid input", correlationID, http.StatusBadRequest)
 	case errors.Is(err, context.DeadlineExceeded):
-		http.Error(w, "timeout", http.StatusGatewayTimeout)
+		buildError(w, "timeout", correlationID, http.StatusGatewayTimeout)
 	case errors.Is(err, common.ErrUpstream):
-		http.Error(w, "embedding backend unavailable", http.StatusBadGateway)
+		buildError(w, "embedding backend unavailable", correlationID, http.StatusBadGateway)
 	case errors.Is(err, common.ErrInvalidOutput):
-		http.Error(w, "invalid output", http.StatusBadGateway)
+		buildError(w, "invalid output", correlationID, http.StatusBadGateway)
 	default:
-		http.Error(w, "internal error", http.StatusInternalServerError)
+		buildError(w, "internal error", correlationID, http.StatusInternalServerError)
 	}
 }
