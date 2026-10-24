@@ -1,4 +1,4 @@
-.PHONY: run test dev-up
+.PHONY: run test dev-up dev-rst
 
 run:
 	go run ./cmd/server
@@ -12,3 +12,6 @@ test:
 dev-up:
 	docker compose up -d
 	docker compose exec ollama ollama pull nomic-embed-text
+
+dev-rst:
+	docker compose down -v --remove-orphans

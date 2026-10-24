@@ -1,26 +1,43 @@
 package main
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"time"
 
+	"github.com/KEBABSELLER6/embeddings/internal/config"
 	"github.com/KEBABSELLER6/embeddings/internal/handler"
-	"github.com/KEBABSELLER6/embeddings/internal/service"
 )
 
 func main() {
-	testService := service.NewTestService()
-	testHandler := handler.NewTestHandler(testService)
+	cli := &http.Client{Timeout: 30 * time.Second}
+	conf, err := config.Configure()
+	if err != nil {
+		slog.Error("configuration error", "err", err)
+		os.Exit(1)
+	}
 
-	mux := http.NewServeMux()
+	embedder, err := NewEmbedder(conf, cli)
+	if err != nil {
+		slog.Error("configuration error", "err", err)
+		os.Exit(1)
+	}
 
-	mux.HandleFunc("GET /test", testHandler.Test)
+	router := handler.NewRouter(handler.Handlers{
+		MaxBodySize:      conf.MaxBodySize,
+		EmbeddingHandler: handler.NewEmbeddingHandler(embedder),
+	})
 
-	slog.Info("server starting ", "addr", ":8080")
+	addr := fmt.Sprintf(":%s", conf.Port)
+	slog.Info("server starting ", "addr", addr)
+
 	srv := &http.Server{
-		Addr:    ":8080",
-		Handler: mux,
+		Addr:              addr,
+		Handler:           router,
+		ReadHeaderTimeout: 5 * time.Second,
+		IdleTimeout:       120 * time.Second,
 	}
 	if err := srv.ListenAndServe(); err != nil {
 		slog.Error("application stopped", "err", err)
