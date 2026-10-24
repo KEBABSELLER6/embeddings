@@ -16,11 +16,6 @@ import (
 	"github.com/KEBABSELLER6/embeddings/internal/logging"
 )
 
-const (
-	upstreamTimeout = 30 * time.Second
-	shutdownTimeout = 35 * time.Second
-)
-
 func main() {
 	if err := run(); err != nil {
 		slog.Error("application stopped", "err", err)
@@ -32,11 +27,11 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
-	cli := &http.Client{Timeout: upstreamTimeout}
 	conf, err := config.Configure()
 	if err != nil {
 		return fmt.Errorf("configure: %w", err)
 	}
+	cli := &http.Client{Timeout: conf.Timeouts.Upstream}
 
 	var h slog.Handler
 	switch conf.Log.Format {
@@ -50,6 +45,17 @@ func run() error {
 	logger := slog.New(logging.NewContextHandler(h))
 	slog.SetDefault(logger)
 
+	logger.Info("config loaded",
+		"port", conf.Port,
+		"provider", conf.Provider,
+		"log_level", conf.Log.Level,
+		"log_format", conf.Log.Format,
+		"upstream_timeout", conf.Timeouts.Upstream,
+		"shutdown_timeout", conf.Timeouts.Shutdown,
+		"max_inputs", conf.MaxInputs,
+		"max_body_size", conf.MaxBodySize,
+	)
+
 	embedder, err := NewEmbedder(conf, cli)
 	if err != nil {
 		return fmt.Errorf("create embedder: %w", err)
@@ -59,7 +65,7 @@ func run() error {
 	router := handler.NewRouter(handler.Handlers{
 		Logger:           logger,
 		MaxBodySize:      conf.MaxBodySize,
-		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh),
+		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh, conf.MaxInputs),
 	})
 
 	addr := fmt.Sprintf(":%s", conf.Port)
@@ -70,6 +76,8 @@ func run() error {
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       120 * time.Second,
+		ReadTimeout:       15 * time.Second,
+		WriteTimeout:      conf.Timeouts.Upstream + 5*time.Second,
 	}
 
 	errCh := make(chan error, 1)
@@ -85,7 +93,7 @@ func run() error {
 	stop()
 
 	logger.Info("shutting down server")
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), shutdownTimeout)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
 	err = srv.Shutdown(shutdownCtx)
 	if err != nil {

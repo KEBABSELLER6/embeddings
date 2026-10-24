@@ -3,6 +3,7 @@ package config
 import (
 	"log/slog"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,6 +17,9 @@ var envKeys = []string{
 	"OLLAMA_ENDPOINT_URL",
 	"LOG_LEVEL",
 	"LOG_FORMAT",
+	"MAX_INPUTS",
+	"UPSTREAM_TIMEOUT",
+	"SHUTDOWN_TIMEOUT",
 }
 
 // setEnv clears every variable Configure reads, then applies env, so a test
@@ -44,6 +48,7 @@ func TestConfigure(t *testing.T) {
 	}
 
 	defaultLog := LogConfig{Level: slog.LevelInfo, Format: LogFormatText}
+	defaultTimeouts := TimeoutConfig{Upstream: 30 * time.Second, Shutdown: 35 * time.Second}
 
 	// defaultOllamaConfig is what ollamaEnv(nil) produces, with log settings swapped in.
 	defaultOllamaConfig := func(log LogConfig) *Config {
@@ -55,7 +60,9 @@ func TestConfigure(t *testing.T) {
 				Model:    "nomic-embed-text",
 				Endpoint: "http://localhost:11434/api/embed",
 			},
-			Log: log,
+			Log:       log,
+			MaxInputs: 2048,
+			Timeouts:  defaultTimeouts,
 		}
 	}
 
@@ -76,7 +83,9 @@ func TestConfigure(t *testing.T) {
 					Model:    "nomic-embed-text",
 					Endpoint: "http://localhost:11434/api/embed",
 				},
-				Log: defaultLog,
+				Log:       defaultLog,
+				MaxInputs: 2048,
+				Timeouts:  defaultTimeouts,
 			},
 		},
 		{
@@ -90,7 +99,9 @@ func TestConfigure(t *testing.T) {
 					Model:    "nomic-embed-text",
 					Endpoint: "http://localhost:11434/api/embed",
 				},
-				Log: defaultLog,
+				Log:       defaultLog,
+				MaxInputs: 2048,
+				Timeouts:  defaultTimeouts,
 			},
 		},
 		{
@@ -107,7 +118,9 @@ func TestConfigure(t *testing.T) {
 					Model:    "mxbai-embed-large",
 					Endpoint: "http://ollama:11434/api/embed",
 				},
-				Log: defaultLog,
+				Log:       defaultLog,
+				MaxInputs: 2048,
+				Timeouts:  defaultTimeouts,
 			},
 		},
 		{
@@ -154,6 +167,70 @@ func TestConfigure(t *testing.T) {
 			name:    "log format is case sensitive",
 			env:     ollamaEnv(map[string]string{"LOG_FORMAT": "JSON"}),
 			wantErr: `unsupported LOG_FORMAT: "JSON"`,
+		},
+		{
+			name: "custom limits and timeouts",
+			env: ollamaEnv(map[string]string{
+				"MAX_INPUTS":       "16",
+				"UPSTREAM_TIMEOUT": "1m30s",
+				"SHUTDOWN_TIMEOUT": "2m",
+			}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.MaxInputs = 16
+				c.Timeouts = TimeoutConfig{Upstream: 90 * time.Second, Shutdown: 2 * time.Minute}
+				return c
+			}(),
+		},
+		{
+			name:    "max inputs is not a number",
+			env:     ollamaEnv(map[string]string{"MAX_INPUTS": "lots"}),
+			wantErr: "failed to parse MAX_INPUTS",
+		},
+		{
+			name:    "max inputs is zero",
+			env:     ollamaEnv(map[string]string{"MAX_INPUTS": "0"}),
+			wantErr: "MAX_INPUTS must be positive",
+		},
+		{
+			name:    "upstream timeout has no unit",
+			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "30"}),
+			wantErr: "failed to parse UPSTREAM_TIMEOUT",
+		},
+		{
+			name:    "upstream timeout is zero",
+			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "0s"}),
+			wantErr: "UPSTREAM_TIMEOUT must be positive",
+		},
+		{
+			name:    "upstream timeout is negative",
+			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "-5s"}),
+			wantErr: "UPSTREAM_TIMEOUT must be positive",
+		},
+		{
+			name:    "shutdown timeout is not a duration",
+			env:     ollamaEnv(map[string]string{"SHUTDOWN_TIMEOUT": "soon"}),
+			wantErr: "failed to parse SHUTDOWN_TIMEOUT",
+		},
+		{
+			name:    "shutdown timeout is zero",
+			env:     ollamaEnv(map[string]string{"SHUTDOWN_TIMEOUT": "0s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be positive",
+		},
+		{
+			name:    "shutdown timeout below upstream timeout",
+			env:     ollamaEnv(map[string]string{"SHUTDOWN_TIMEOUT": "10s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+		},
+		{
+			name:    "shutdown timeout equal to upstream timeout",
+			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "30s", "SHUTDOWN_TIMEOUT": "30s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+		},
+		{
+			name:    "raising only the upstream timeout past the default shutdown timeout",
+			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "40s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
 		},
 		{
 			name:    "body size is not a number",

@@ -14,12 +14,13 @@ type EmbeddingService interface {
 }
 
 type EmbeddingHandler struct {
-	service EmbeddingService
-	eh      *ErrorHandler
+	service   EmbeddingService
+	eh        *ErrorHandler
+	maxInputs int
 }
 
-func NewEmbeddingHandler(service EmbeddingService, eh *ErrorHandler) *EmbeddingHandler {
-	return &EmbeddingHandler{service: service, eh: eh}
+func NewEmbeddingHandler(service EmbeddingService, eh *ErrorHandler, maxInputs int) *EmbeddingHandler {
+	return &EmbeddingHandler{service: service, eh: eh, maxInputs: maxInputs}
 }
 
 type EmbeddingRequest struct {
@@ -36,7 +37,7 @@ func (h *EmbeddingHandler) HandleEmbeddingRequest(w http.ResponseWriter, r *http
 		return
 	}
 
-	if len(b.Input) == 0 || len(b.Input) > 2048 {
+	if len(b.Input) == 0 || len(b.Input) > h.maxInputs {
 		h.eh.HandleError(w, r, common.ErrInvalidInput)
 		return
 	}

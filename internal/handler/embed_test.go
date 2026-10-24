@@ -29,6 +29,9 @@ func (f *fakeEmbeddingService) Embed(_ context.Context, input []string) (*common
 	return f.resp, f.err
 }
 
+// testMaxInputs keeps the input-count boundary cases small.
+const testMaxInputs = 3
+
 func TestHandleEmbeddingRequest(t *testing.T) {
 	okResp := &common.EmbeddingResponse{
 		Model:      "test-model",
@@ -84,18 +87,18 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 		},
 		{
 			name:        "too many inputs",
-			body:        `{"input":[` + strings.TrimSuffix(strings.Repeat(`"a",`, 2049), ",") + `]}`,
+			body:        `{"input":["a","b","c","d"]}`,
 			svc:         &fakeEmbeddingService{},
 			wantStatus:  http.StatusBadRequest,
 			wantErrBody: "invalid input",
 		},
 		{
 			name:       "maximum number of inputs is accepted",
-			body:       `{"input":[` + strings.TrimSuffix(strings.Repeat(`"a",`, 2048), ",") + `]}`,
+			body:       `{"input":["a","b","c"]}`,
 			svc:        &fakeEmbeddingService{resp: okResp},
 			wantStatus: http.StatusOK,
 			wantCalls:  1,
-			wantInput:  strings.Split(strings.TrimSuffix(strings.Repeat("a,", 2048), ","), ","),
+			wantInput:  []string{"a", "b", "c"},
 			wantJSON:   `{"model":"test-model","embeddings":[[0.5,0.25],[1,2]]}`,
 		},
 		{
@@ -147,7 +150,7 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := NewEmbeddingHandler(tt.svc, newTestErrorHandler())
+			h := NewEmbeddingHandler(tt.svc, newTestErrorHandler(), testMaxInputs)
 			req := newRequestWithCorrelationID(http.MethodPost, "/api/v1/embed", strings.NewReader(tt.body))
 			rr := httptest.NewRecorder()
 
@@ -175,7 +178,7 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 
 func TestHandleEmbeddingRequestBodyTooLarge(t *testing.T) {
 	svc := &fakeEmbeddingService{}
-	h := NewEmbeddingHandler(svc, newTestErrorHandler())
+	h := NewEmbeddingHandler(svc, newTestErrorHandler(), testMaxInputs)
 	limited := NewMaxSizeHandler(10).LimitBodySize(h.HandleEmbeddingRequest)
 
 	req := newRequestWithCorrelationID(http.MethodPost, "/api/v1/embed", strings.NewReader(`{"input":["hello","world"]}`))

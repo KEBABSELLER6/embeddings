@@ -67,7 +67,7 @@ func (s *OllamaService) Embed(ctx context.Context, input []string) (*common.Embe
 	}
 
 	if len(data.Embeddings) != len(input) {
-		return nil, fmt.Errorf("%w: %s", common.ErrInvalidOutput, "output lenght is malformed")
+		return nil, fmt.Errorf("%w: %s", common.ErrInvalidOutput, "output length is malformed")
 	}
 
 	result := &common.EmbeddingResponse{

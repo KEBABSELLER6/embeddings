@@ -1,4 +1,4 @@
-.PHONY: run test dev-up dev-rst
+.PHONY: run test dev-up dev-rst build
 
 run:
 	go run ./cmd/server
@@ -7,7 +7,7 @@ build:
 	go build -o bin/server ./cmd/server
 
 test:
-	go test ./internal/...
+	go test -race ./...
 
 dev-up:
 	docker compose up -d
