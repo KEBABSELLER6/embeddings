@@ -1,4 +1,4 @@
-.PHONY: run test
+.PHONY: run test dev-up
 
 run:
 	go run ./cmd/server
@@ -8,3 +8,7 @@ build:
 
 test:
 	go test ./internal/...
+
+dev-up:
+	docker compose up -d
+	docker compose exec ollama ollama pull nomic-embed-text
