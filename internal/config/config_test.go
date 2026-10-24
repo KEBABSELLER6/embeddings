@@ -273,6 +273,40 @@ func TestConfigure(t *testing.T) {
 			wantErr: "missing OLLAMA_ENDPOINT_URL",
 		},
 		{
+			name:    "ollama endpoint without scheme",
+			env:     ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": "localhost:11434/api/embed"}),
+			wantErr: `OLLAMA_ENDPOINT_URL must be an absolute http(s) URL, got "localhost:11434/api/embed"`,
+		},
+		{
+			name:    "ollama endpoint is a bare word",
+			env:     ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": "ollama"}),
+			wantErr: "OLLAMA_ENDPOINT_URL must be an absolute http(s) URL",
+		},
+		{
+			name:    "ollama endpoint is a relative path",
+			env:     ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": "/api/embed"}),
+			wantErr: "OLLAMA_ENDPOINT_URL must be an absolute http(s) URL",
+		},
+		{
+			name:    "ollama endpoint has a non-http scheme",
+			env:     ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": "ftp://ollama/api/embed"}),
+			wantErr: "OLLAMA_ENDPOINT_URL must be an absolute http(s) URL",
+		},
+		{
+			name:    "ollama endpoint fails to parse",
+			env:     ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": "http://bad host/"}),
+			wantErr: "OLLAMA_ENDPOINT_URL must be an absolute http(s) URL",
+		},
+		{
+			name: "https ollama endpoint",
+			env:  ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": "https://ollama.example.com/api/embed"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.Ollama.Endpoint = "https://ollama.example.com/api/embed"
+				return c
+			}(),
+		},
+		{
 			name:    "ollama model is missing",
 			env:     ollamaEnv(map[string]string{"OLLAMA_MODEL": ""}),
 			wantErr: "missing OLLAMA_MODEL",

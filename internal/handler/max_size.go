@@ -10,9 +10,9 @@ func NewMaxSizeHandler(limit int64) *MaxSizeHandler {
 	return &MaxSizeHandler{limit: limit}
 }
 
-func (h *MaxSizeHandler) LimitBodySize(next func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
+func (h *MaxSizeHandler) LimitBodySize(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		r.Body = http.MaxBytesReader(w, r.Body, h.limit)
-		next(w, r)
+		next.ServeHTTP(w, r)
 	}
 }

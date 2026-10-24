@@ -24,12 +24,12 @@ func (rw *responseWriter) WriteHeader(code int) {
 	rw.ResponseWriter.WriteHeader(code)
 }
 
-func (h *LoggingHandler) Logging(next func(w http.ResponseWriter, r *http.Request)) http.HandlerFunc {
+func (h *LoggingHandler) Logging(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
 
-		next(rw, r)
+		next.ServeHTTP(rw, r)
 
 		duration := time.Since(start)
 		h.slog.InfoContext(r.Context(), "request",
@@ -39,4 +39,8 @@ func (h *LoggingHandler) Logging(next func(w http.ResponseWriter, r *http.Reques
 			"duration_ms", duration.Milliseconds(),
 		)
 	}
+}
+
+func (rw *responseWriter) Unwrap() http.ResponseWriter {
+	return rw.ResponseWriter
 }

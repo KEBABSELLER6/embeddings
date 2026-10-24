@@ -26,7 +26,7 @@ func validCorrelationID(id string) bool {
 	return true
 }
 
-func CorrelationID(next http.HandlerFunc) http.HandlerFunc {
+func CorrelationID(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		id := r.Header.Get("X-Correlation-ID")
 		if !validCorrelationID(id) {
@@ -35,6 +35,6 @@ func CorrelationID(next http.HandlerFunc) http.HandlerFunc {
 
 		ctx := logging.WithCorrelationID(r.Context(), id)
 		w.Header().Set("X-Correlation-ID", id)
-		next(w, r.WithContext(ctx))
+		next.ServeHTTP(w, r.WithContext(ctx))
 	}
 }

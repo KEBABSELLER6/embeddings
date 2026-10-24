@@ -15,14 +15,14 @@ import (
 func TestMaxSizeHandler(t *testing.T) {
 	eh := newTestErrorHandler()
 
-	next := func(w http.ResponseWriter, r *http.Request) {
+	next := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, err := io.ReadAll(r.Body)
 		if err != nil {
 			eh.HandleError(w, r, err)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-	}
+	})
 
 	request := EmbeddingRequest{
 		Input: []string{"test123", "test1234", "test"},

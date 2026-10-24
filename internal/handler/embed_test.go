@@ -179,7 +179,7 @@ func TestHandleEmbeddingRequest(t *testing.T) {
 func TestHandleEmbeddingRequestBodyTooLarge(t *testing.T) {
 	svc := &fakeEmbeddingService{}
 	h := NewEmbeddingHandler(svc, newTestErrorHandler(), testMaxInputs)
-	limited := NewMaxSizeHandler(10).LimitBodySize(h.HandleEmbeddingRequest)
+	limited := NewMaxSizeHandler(10).LimitBodySize(http.HandlerFunc(h.HandleEmbeddingRequest))
 
 	req := newRequestWithCorrelationID(http.MethodPost, "/api/v1/embed", strings.NewReader(`{"input":["hello","world"]}`))
 	rr := httptest.NewRecorder()

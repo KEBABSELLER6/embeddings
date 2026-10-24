@@ -121,9 +121,9 @@ func Configure() (*Config, error) {
 		if endpoint == "" {
 			return nil, errors.New("missing OLLAMA_ENDPOINT_URL for ollama provider")
 		}
-		_, err := url.Parse(endpoint)
-		if err != nil {
-			return nil, errors.New("OLLAMA_ENDPOINT_URL is not a valid url")
+		u, err := url.Parse(endpoint)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+			return nil, fmt.Errorf("OLLAMA_ENDPOINT_URL must be an absolute http(s) URL, got %q", endpoint)
 		}
 
 		model := os.Getenv("OLLAMA_MODEL")

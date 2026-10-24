@@ -19,5 +19,10 @@ func NewRouter(h Handlers) http.Handler {
 
 	logging := NewLoggingHandler(h.Logger)
 	maxSize := NewMaxSizeHandler(h.MaxBodySize)
-	return http.HandlerFunc(CorrelationID(logging.Logging(maxSize.LimitBodySize(mux.ServeHTTP))))
+
+	var router http.Handler = mux
+	router = logging.Logging(router)
+	router = CorrelationID(router)
+	router = maxSize.LimitBodySize(router)
+	return router
 }

@@ -70,10 +70,10 @@ func TestCorrelationIDMiddleware(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			var capturedID string
 
-			handler := CorrelationID(func(w http.ResponseWriter, r *http.Request) {
+			handler := CorrelationID(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				capturedID = logging.CorrelationIDFromContext(r.Context())
 				w.WriteHeader(http.StatusOK)
-			})
+			}))
 
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			if tt.incomingHeader != "" {

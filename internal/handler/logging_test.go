@@ -33,9 +33,9 @@ func TestLoggingMiddleware(t *testing.T) {
 	req := newRequestWithCorrelationID(http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()
 
-	handler := h.Logging(func(w http.ResponseWriter, r *http.Request) {
+	handler := h.Logging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusTeapot)
-	})
+	}))
 	handler.ServeHTTP(rr, req)
 
 	require.Len(t, capture.records, 1)
