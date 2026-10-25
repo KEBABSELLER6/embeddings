@@ -59,3 +59,21 @@ func TestLoggingMiddleware(t *testing.T) {
 		"correlation_id": slog.StringValue(testCorrelationID),
 	}, attrs)
 }
+
+func TestLoggingMiddlewareUnwrap(t *testing.T) {
+	h := NewLoggingHandler(slog.New(slog.DiscardHandler))
+
+	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	// The recorder implements http.Flusher, standing in for the server's writer.
+	rr := httptest.NewRecorder()
+
+	var flushErr error
+	handler := h.Logging(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Only works if ResponseController can get past responseWriter via Unwrap.
+		flushErr = http.NewResponseController(w).Flush()
+	}))
+	handler.ServeHTTP(rr, req)
+
+	require.NoError(t, flushErr)
+	assert.True(t, rr.Flushed)
+}

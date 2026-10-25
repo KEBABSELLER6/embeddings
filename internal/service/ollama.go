@@ -36,7 +36,7 @@ func (s *OllamaService) Embed(ctx context.Context, input []string) (*common.Embe
 
 	b, err := json.Marshal(d)
 	if err != nil {
-		return nil, fmt.Errorf("%w: %v", common.ErrInvalidInput, err)
+		return nil, fmt.Errorf("failed marshal: %w", err)
 	}
 
 	body := bytes.NewBuffer(b)
@@ -56,7 +56,7 @@ func (s *OllamaService) Embed(ctx context.Context, input []string) (*common.Embe
 	if resp.StatusCode != http.StatusOK {
 		msg, e := io.ReadAll(io.LimitReader(resp.Body, 1<<10))
 		if e != nil {
-			return nil, fmt.Errorf("%w: %w", common.ErrUpstream, e)
+			return nil, fmt.Errorf("%w: status %d, reading body: %w", common.ErrUpstream, resp.StatusCode, e)
 		}
 		return nil, fmt.Errorf("%w: status %d message %s", common.ErrUpstream, resp.StatusCode, string(msg))
 	}

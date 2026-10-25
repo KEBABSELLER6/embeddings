@@ -11,6 +11,8 @@ import (
 	"github.com/KEBABSELLER6/embeddings/internal/logging"
 )
 
+const statusClientClosedRequest = 499
+
 type ErrorHandler struct {
 	logger *slog.Logger
 }
@@ -39,6 +41,12 @@ func buildError(w http.ResponseWriter, msg string, correlationID string, status 
 
 func (h *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, err error) {
 	correlationID := logging.CorrelationIDFromContext(r.Context())
+	if errors.Is(err, context.Canceled) {
+		h.logger.WarnContext(r.Context(), "client disconnected", "err", err)
+		buildError(w, "client disconnected", correlationID, statusClientClosedRequest)
+		return
+	}
+
 	h.logger.ErrorContext(r.Context(), "request failed", "err", err)
 
 	var maxErr *http.MaxBytesError

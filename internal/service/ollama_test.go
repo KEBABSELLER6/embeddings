@@ -177,6 +177,20 @@ func TestOllamaServiceEmbed(t *testing.T) {
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 
+	t.Run("cancel mid-request is both upstream and canceled", func(t *testing.T) {
+		svc := newTestService(t, blockUntilClientGone, 0)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		time.AfterFunc(50*time.Millisecond, cancel)
+
+		_, err := svc.Embed(ctx, []string{"a"})
+
+		// Both match, so HandleError must check Canceled before ErrUpstream.
+		require.Error(t, err)
+		assert.ErrorIs(t, err, common.ErrUpstream)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+
 	t.Run("unreachable server is an upstream error", func(t *testing.T) {
 		srv := httptest.NewServer(http.NotFoundHandler())
 		endpoint := srv.URL

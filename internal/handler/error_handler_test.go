@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -72,6 +73,19 @@ func TestHandleError(t *testing.T) {
 			wantMessage: "timeout",
 		},
 		{
+			name:        "client disconnected",
+			err:         context.Canceled,
+			wantStatus:  statusClientClosedRequest,
+			wantMessage: "client disconnected",
+		},
+		{
+			// What the service returns when the client hangs up mid-request.
+			name:        "client disconnect takes precedence over upstream failure",
+			err:         fmt.Errorf("%w: %w", common.ErrUpstream, context.Canceled),
+			wantStatus:  statusClientClosedRequest,
+			wantMessage: "client disconnected",
+		},
+		{
 			name:        "invalid output",
 			err:         common.ErrInvalidOutput,
 			wantStatus:  http.StatusBadGateway,
@@ -98,6 +112,47 @@ func TestHandleError(t *testing.T) {
 			var got ErrorResponse
 			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &got))
 			assert.Equal(t, ErrorResponse{Message: tt.wantMessage, CorrelationID: testCorrelationID}, got)
+		})
+	}
+}
+
+func TestHandleErrorLogLevel(t *testing.T) {
+	tests := []struct {
+		name      string
+		err       error
+		wantLevel slog.Level
+	}{
+		{
+			name:      "client disconnect is a warning",
+			err:       context.Canceled,
+			wantLevel: slog.LevelWarn,
+		},
+		{
+			name:      "client disconnect during upstream call is a warning",
+			err:       fmt.Errorf("%w: %w", common.ErrUpstream, context.Canceled),
+			wantLevel: slog.LevelWarn,
+		},
+		{
+			name:      "upstream failure is an error",
+			err:       common.ErrUpstream,
+			wantLevel: slog.LevelError,
+		},
+		{
+			name:      "unknown error is an error",
+			err:       errors.New("boom"),
+			wantLevel: slog.LevelError,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			capture := &captureHandler{}
+			eh := NewErrorHandler(slog.New(capture))
+
+			eh.HandleError(httptest.NewRecorder(), newRequestWithCorrelationID(http.MethodGet, "/", nil), tt.err)
+
+			require.Len(t, capture.records, 1)
+			assert.Equal(t, tt.wantLevel, capture.records[0].Level)
 		})
 	}
 }

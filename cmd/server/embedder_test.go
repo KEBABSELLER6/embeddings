@@ -23,6 +23,16 @@ func TestNewEmbedder(t *testing.T) {
 		assert.IsType(t, &service.OllamaService{}, got)
 	})
 
+	t.Run("ollama provider without ollama config is an error", func(t *testing.T) {
+		cfg := &config.Config{Provider: config.ProviderOllama}
+
+		got, err := NewEmbedder(cfg, &http.Client{})
+
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "Ollama config is missing")
+		assert.Nil(t, got)
+	})
+
 	t.Run("unknown provider is an error", func(t *testing.T) {
 		cfg := &config.Config{Provider: config.Provider("nope")}
 
