@@ -1,0 +1,12 @@
+CHANGELOG.md
+.env
+.env.example
+.gitignore
+.release-please-manifest.json
+compose.yaml
+Makefile
+release-please-config.json
+renovate.json
+.github/
+bin/
+.git/
