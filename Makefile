@@ -1,4 +1,4 @@
-.PHONY: run test dev-up dev-rst build
+.PHONY: run test dev-up dev-rst build proto
 
 run:
 	go run ./cmd/server
@@ -15,3 +15,9 @@ dev-up:
 
 dev-rst:
 	docker compose down -v --remove-orphans
+
+proto:
+	protoc -I proto \
+		--go_out=gen --go_opt=paths=source_relative \
+		--go-grpc_out=gen --go-grpc_opt=paths=source_relative \
+		proto/embeddings/v1/*.proto

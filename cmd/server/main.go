@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"github.com/KEBABSELLER6/embeddings/internal/config"
+	"github.com/KEBABSELLER6/embeddings/internal/grpchandler"
 	"github.com/KEBABSELLER6/embeddings/internal/handler"
 	"github.com/KEBABSELLER6/embeddings/internal/logging"
 )
@@ -54,6 +56,7 @@ func run() error {
 		"shutdown_timeout", conf.Timeouts.Shutdown,
 		"max_inputs", conf.MaxInputs,
 		"max_body_size", conf.MaxBodySize,
+		"grpc_port", conf.GRPCPort,
 	)
 
 	embedder, err := NewEmbedder(conf, cli)
@@ -80,7 +83,25 @@ func run() error {
 		WriteTimeout:      conf.Timeouts.Upstream + 5*time.Second,
 	}
 
-	errCh := make(chan error, 1)
+	grpcEH := grpchandler.NewErrorHandler(logger)
+	grpcSrv := grpchandler.NewServer(grpchandler.Handlers{
+		Embed:       grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
+		Logging:     grpchandler.NewLoggingHandler(logger),
+		Correlation: grpchandler.NewCorrelationHandler(logger),
+		MaxBodySize: int(conf.MaxBodySize),
+	})
+	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
+	logger.Info("grpc server starting", "addr", grpcAddr)
+
+	errCh := make(chan error, 2)
+	go func() {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			errCh <- err
+			return
+		}
+		errCh <- grpcSrv.Serve(lis)
+	}()
 	go func() { errCh <- srv.ListenAndServe() }()
 
 	select {
@@ -95,9 +116,18 @@ func run() error {
 	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
+	done := make(chan struct{})
+	go func() { grpcSrv.GracefulStop(); close(done) }()
 	err = srv.Shutdown(shutdownCtx)
+	select {
+	case <-done:
+	case <-shutdownCtx.Done():
+		grpcSrv.Stop()
+	}
+
 	if err != nil {
 		srv.Close()
+		grpcSrv.Stop()
 		return fmt.Errorf("shutdown: %w", err)
 	}
 	logger.Info("server stopped")

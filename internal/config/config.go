@@ -25,6 +25,7 @@ type Config struct {
 	Log         LogConfig
 	MaxInputs   int
 	Timeouts    TimeoutConfig
+	GRPCPort    string
 }
 
 type OllamaConfig struct {
@@ -77,10 +78,35 @@ func positiveIntEnv(key string, def int64) (int64, error) {
 	return parsed, nil
 }
 
-func Configure() (*Config, error) {
-	port := os.Getenv("PORT")
+func portEnv(key string, def string) (string, error) {
+	port := os.Getenv(key)
 	if port == "" {
-		port = "8080"
+		return def, nil
+	}
+
+	p, err := strconv.ParseInt(port, 10, 64)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse %s: %w", key, err)
+	}
+
+	if p < 1 || p > 65535 {
+		return "", fmt.Errorf("%s must be between 1-65535", key)
+	}
+
+	return strconv.Itoa(int(p)), nil
+}
+
+func Configure() (*Config, error) {
+	port, err := portEnv("PORT", "8080")
+	if err != nil {
+		return nil, err
+	}
+	grpcPort, err := portEnv("GRPC_PORT", "50051")
+	if err != nil {
+		return nil, err
+	}
+	if grpcPort == port {
+		return nil, fmt.Errorf("PORT cannot equal GRPC_PORT")
 	}
 
 	maxBodySize, err := positiveIntEnv("MAX_BODY_SIZE", 512000)
@@ -167,6 +193,7 @@ func Configure() (*Config, error) {
 		Log:         LogConfig{Format: format, Level: lvl},
 		MaxInputs:   int(maxInputs),
 		Timeouts:    TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout},
+		GRPCPort:    grpcPort,
 	}
 
 	return config, nil

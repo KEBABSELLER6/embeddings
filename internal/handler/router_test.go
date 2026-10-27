@@ -21,7 +21,7 @@ const testMaxBodySize = 64
 // newTestServer runs the full router on a real server. A recorder is not
 // enough here: only the server's own ResponseWriter reacts to MaxBytesReader
 // by closing the connection.
-func newTestServer(t *testing.T, svc EmbeddingService) *httptest.Server {
+func newTestServer(t *testing.T, svc common.EmbeddingService) *httptest.Server {
 	t.Helper()
 
 	router := NewRouter(Handlers{

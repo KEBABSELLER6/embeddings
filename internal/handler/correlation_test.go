@@ -31,7 +31,7 @@ func TestCorrelationIDMiddleware(t *testing.T) {
 		},
 		{
 			name:           "keeps id exactly at the length limit",
-			incomingHeader: strings.Repeat("a", maxCorrelationIDLen),
+			incomingHeader: strings.Repeat("a", logging.MaxCorrelationIDLen),
 			wantGenerated:  false,
 		},
 		{
@@ -41,7 +41,7 @@ func TestCorrelationIDMiddleware(t *testing.T) {
 		},
 		{
 			name:           "generates id when header is one over the length limit",
-			incomingHeader: strings.Repeat("a", maxCorrelationIDLen+1),
+			incomingHeader: strings.Repeat("a", logging.MaxCorrelationIDLen+1),
 			wantGenerated:  true,
 		},
 		{

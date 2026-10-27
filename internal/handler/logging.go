@@ -7,11 +7,11 @@ import (
 )
 
 type LoggingHandler struct {
-	slog *slog.Logger
+	logger *slog.Logger
 }
 
 func NewLoggingHandler(logger *slog.Logger) *LoggingHandler {
-	return &LoggingHandler{slog: logger}
+	return &LoggingHandler{logger: logger}
 }
 
 type responseWriter struct {
@@ -32,7 +32,7 @@ func (h *LoggingHandler) Logging(next http.Handler) http.HandlerFunc {
 		next.ServeHTTP(rw, r)
 
 		duration := time.Since(start)
-		h.slog.InfoContext(r.Context(), "request",
+		h.logger.InfoContext(r.Context(), "request",
 			"method", r.Method,
 			"path", r.URL.Path,
 			"status", rw.status,
