@@ -26,6 +26,7 @@ type Config struct {
 	MaxInputs   int
 	Timeouts    TimeoutConfig
 	GRPCPort    string
+	MetricsPort string
 }
 
 type OllamaConfig struct {
@@ -105,8 +106,12 @@ func Configure() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if grpcPort == port {
-		return nil, fmt.Errorf("PORT cannot equal GRPC_PORT")
+	metricsPort, err := portEnv("METRICS_PORT", "9090")
+	if err != nil {
+		return nil, err
+	}
+	if grpcPort == port || grpcPort == metricsPort || metricsPort == port {
+		return nil, fmt.Errorf("PORT, GRPC_PORT, METRICS_PORT must be unique")
 	}
 
 	maxBodySize, err := positiveIntEnv("MAX_BODY_SIZE", 512000)
@@ -194,6 +199,7 @@ func Configure() (*Config, error) {
 		MaxInputs:   int(maxInputs),
 		Timeouts:    TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout},
 		GRPCPort:    grpcPort,
+		MetricsPort: metricsPort,
 	}
 
 	return config, nil

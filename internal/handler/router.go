@@ -9,6 +9,7 @@ type Handlers struct {
 	MaxBodySize      int64
 	EmbeddingHandler *EmbeddingHandler
 	Logger           *slog.Logger
+	MetricsHandler   *MetricsHandler
 }
 
 func NewRouter(h Handlers) http.Handler {
@@ -20,7 +21,7 @@ func NewRouter(h Handlers) http.Handler {
 	logging := NewLoggingHandler(h.Logger)
 	maxSize := NewMaxSizeHandler(h.MaxBodySize)
 
-	var router http.Handler = mux
+	var router http.Handler = h.MetricsHandler.Metrics(mux)
 	router = logging.Logging(router)
 	router = CorrelationID(router)
 	router = maxSize.LimitBodySize(router)

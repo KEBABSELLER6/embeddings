@@ -58,14 +58,16 @@ func TestServerRejectsOversizedRequest(t *testing.T) {
 }
 
 func TestServerRegistersReflection(t *testing.T) {
-	srv := NewServer(Handlers{
-		Embed:       NewEmbeddingHandler(&fakeEmbeddingService{}, NewErrorHandler(nil), testMaxInputs),
-		Logging:     NewLoggingHandler(nil),
-		Correlation: NewCorrelationHandler(nil),
-		MaxBodySize: testMaxBodySize,
+	srv, _ := NewServer(Handlers{
+		Embed:          NewEmbeddingHandler(&fakeEmbeddingService{}, NewErrorHandler(nil), testMaxInputs),
+		Logging:        NewLoggingHandler(nil),
+		Correlation:    NewCorrelationHandler(nil),
+		MetricsHandler: NewMetricsHandler(nil),
+		MaxBodySize:    testMaxBodySize,
 	})
 
 	info := srv.GetServiceInfo()
 	assert.Contains(t, info, "embeddings.v1.EmbeddingService")
 	assert.Contains(t, info, "grpc.reflection.v1.ServerReflection")
+	assert.Contains(t, info, "grpc.health.v1.Health")
 }

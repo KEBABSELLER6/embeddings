@@ -10,9 +10,13 @@ import (
 	embeddingsv1 "github.com/KEBABSELLER6/embeddings/gen/embeddings/v1"
 	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/KEBABSELLER6/embeddings/internal/logging"
+	"github.com/KEBABSELLER6/embeddings/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/health"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -82,18 +86,45 @@ func recordAttrs(r slog.Record) map[string]slog.Value {
 }
 
 // startTestServer runs the real server, wired like in main, on an in-memory
-// listener and returns a client connected to it.
+// listener and returns an embeddings client connected to it.
 func startTestServer(t *testing.T, svc common.EmbeddingService) (embeddingsv1.EmbeddingServiceClient, *captureHandler) {
+	t.Helper()
+
+	conn, _, capture := startTestServerConn(t, svc)
+	return embeddingsv1.NewEmbeddingServiceClient(conn), capture
+}
+
+// startTestServerConn is startTestServer for tests that need the raw
+// connection (to build other clients) or the health server.
+func startTestServerConn(t *testing.T, svc common.EmbeddingService) (*grpc.ClientConn, *health.Server, *captureHandler) {
+	t.Helper()
+
+	ts := startTestServerFull(t, svc)
+	return ts.conn, ts.hs, ts.capture
+}
+
+type testServer struct {
+	conn    *grpc.ClientConn
+	hs      *health.Server
+	capture *captureHandler
+	metrics *metrics.Metrics
+}
+
+// startTestServerFull exposes everything the other helpers hide, including
+// the request metrics, backed by a registry private to this test.
+func startTestServerFull(t *testing.T, svc common.EmbeddingService) *testServer {
 	t.Helper()
 
 	capture := &captureHandler{}
 	logger := slog.New(logging.NewContextHandler(capture))
+	m := metrics.New(prometheus.NewRegistry())
 
-	srv := NewServer(Handlers{
-		Embed:       NewEmbeddingHandler(svc, NewErrorHandler(logger), testMaxInputs),
-		Logging:     NewLoggingHandler(logger),
-		Correlation: NewCorrelationHandler(logger),
-		MaxBodySize: testMaxBodySize,
+	srv, hs := NewServer(Handlers{
+		Embed:          NewEmbeddingHandler(svc, NewErrorHandler(logger), testMaxInputs),
+		Logging:        NewLoggingHandler(logger),
+		Correlation:    NewCorrelationHandler(logger),
+		MetricsHandler: NewMetricsHandler(m),
+		MaxBodySize:    testMaxBodySize,
 	})
 
 	lis := bufconn.Listen(1 << 20)
@@ -109,5 +140,17 @@ func startTestServer(t *testing.T, svc common.EmbeddingService) (embeddingsv1.Em
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	return embeddingsv1.NewEmbeddingServiceClient(conn), capture
+	return &testServer{conn: conn, hs: hs, capture: capture, metrics: m}
+}
+
+// observationCount returns how many observations the duration histogram has
+// recorded for the given labels.
+func observationCount(t *testing.T, m *metrics.Metrics, labels ...string) uint64 {
+	t.Helper()
+
+	var out dto.Metric
+	obs, ok := m.Duration.WithLabelValues(labels...).(prometheus.Metric)
+	require.True(t, ok, "histogram observer should be a metric")
+	require.NoError(t, obs.Write(&out))
+	return out.GetHistogram().GetSampleCount()
 }

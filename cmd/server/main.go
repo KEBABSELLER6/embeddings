@@ -16,6 +16,10 @@ import (
 	"github.com/KEBABSELLER6/embeddings/internal/grpchandler"
 	"github.com/KEBABSELLER6/embeddings/internal/handler"
 	"github.com/KEBABSELLER6/embeddings/internal/logging"
+	"github.com/KEBABSELLER6/embeddings/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -57,18 +61,26 @@ func run() error {
 		"max_inputs", conf.MaxInputs,
 		"max_body_size", conf.MaxBodySize,
 		"grpc_port", conf.GRPCPort,
+		"metrics_port", conf.MetricsPort,
 	)
 
 	embedder, err := NewEmbedder(conf, cli)
 	if err != nil {
 		return fmt.Errorf("create embedder: %w", err)
 	}
+	reg := prometheus.NewRegistry()
+	metr := metrics.New(reg)
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
 
 	eh := handler.NewErrorHandler(logger)
 	router := handler.NewRouter(handler.Handlers{
 		Logger:           logger,
 		MaxBodySize:      conf.MaxBodySize,
 		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh, conf.MaxInputs),
+		MetricsHandler:   handler.NewMetricsHandler(metr),
 	})
 
 	addr := fmt.Sprintf(":%s", conf.Port)
@@ -84,16 +96,27 @@ func run() error {
 	}
 
 	grpcEH := grpchandler.NewErrorHandler(logger)
-	grpcSrv := grpchandler.NewServer(grpchandler.Handlers{
-		Embed:       grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
-		Logging:     grpchandler.NewLoggingHandler(logger),
-		Correlation: grpchandler.NewCorrelationHandler(logger),
-		MaxBodySize: int(conf.MaxBodySize),
+	grpcSrv, grpcHs := grpchandler.NewServer(grpchandler.Handlers{
+		Embed:          grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
+		Logging:        grpchandler.NewLoggingHandler(logger),
+		Correlation:    grpchandler.NewCorrelationHandler(logger),
+		MaxBodySize:    int(conf.MaxBodySize),
+		MetricsHandler: grpchandler.NewMetricsHandler(metr),
 	})
 	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
 	logger.Info("grpc server starting", "addr", grpcAddr)
 
-	errCh := make(chan error, 2)
+	metricsAddr := fmt.Sprintf(":%s", conf.MetricsPort)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	metricsSrv := &http.Server{
+		Addr:              metricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	logger.Info("metrics server starting", "addr", metricsAddr)
+
+	errCh := make(chan error, 3)
 	go func() {
 		lis, err := net.Listen("tcp", grpcAddr)
 		if err != nil {
@@ -103,6 +126,7 @@ func run() error {
 		errCh <- grpcSrv.Serve(lis)
 	}()
 	go func() { errCh <- srv.ListenAndServe() }()
+	go func() { errCh <- metricsSrv.ListenAndServe() }()
 
 	select {
 	case err := <-errCh:
@@ -116,19 +140,25 @@ func run() error {
 	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
-	done := make(chan struct{})
-	go func() { grpcSrv.GracefulStop(); close(done) }()
+	grpcHs.Shutdown()
+	grpcCh := make(chan struct{})
+	go func() { grpcSrv.GracefulStop(); close(grpcCh) }()
+	metricsErr := make(chan error, 1)
+	go func() { metricsErr <- metricsSrv.Shutdown(shutdownCtx) }()
 	err = srv.Shutdown(shutdownCtx)
 	select {
-	case <-done:
+	case <-grpcCh:
 	case <-shutdownCtx.Done():
 		grpcSrv.Stop()
+	}
+	if mErr := <-metricsErr; mErr != nil {
+		metricsSrv.Close()
+		err = errors.Join(err, mErr)
 	}
 
 	if err != nil {
 		srv.Close()
-		grpcSrv.Stop()
-		return fmt.Errorf("shutdown: %w", err)
+		return fmt.Errorf("shutdown server: %w", err)
 	}
 	logger.Info("server stopped")
 	return nil

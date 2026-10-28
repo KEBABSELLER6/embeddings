@@ -1,4 +1,4 @@
-.PHONY: run test dev-up dev-rst build proto
+.PHONY: run test dev-up dev-rst build proto vet
 
 run:
 	go run ./cmd/server
@@ -8,6 +8,9 @@ build:
 
 test:
 	go test -race ./...
+
+vet:
+	go vet ./...
 
 dev-up:
 	docker compose up -d

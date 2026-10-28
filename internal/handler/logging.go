@@ -14,20 +14,10 @@ func NewLoggingHandler(logger *slog.Logger) *LoggingHandler {
 	return &LoggingHandler{logger: logger}
 }
 
-type responseWriter struct {
-	http.ResponseWriter
-	status int
-}
-
-func (rw *responseWriter) WriteHeader(code int) {
-	rw.status = code
-	rw.ResponseWriter.WriteHeader(code)
-}
-
 func (h *LoggingHandler) Logging(next http.Handler) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		rw := &responseWriter{ResponseWriter: w, status: http.StatusOK}
+		rw := &ResponseWriter{ResponseWriter: w, status: http.StatusOK}
 
 		next.ServeHTTP(rw, r)
 
@@ -39,8 +29,4 @@ func (h *LoggingHandler) Logging(next http.Handler) http.HandlerFunc {
 			"duration_ms", duration.Milliseconds(),
 		)
 	}
-}
-
-func (rw *responseWriter) Unwrap() http.ResponseWriter {
-	return rw.ResponseWriter
 }
