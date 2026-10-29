@@ -34,7 +34,7 @@ func (h *ErrorHandler) HandleError(ctx context.Context, err error) error {
 	case errors.Is(err, common.ErrInvalidInput):
 		return status.Error(codes.InvalidArgument, "invalid input")
 	case errors.Is(err, common.ErrInvalidOutput):
-		return status.Error(codes.Internal, "invalid output")
+		return status.Error(codes.Unavailable, "invalid output")
 	default:
 		return status.Error(codes.Internal, "internal error")
 	}

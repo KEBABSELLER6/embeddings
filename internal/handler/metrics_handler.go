@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/KEBABSELLER6/embeddings/internal/metrics"
 )
 
@@ -22,7 +23,7 @@ func (h *MetricsHandler) Metrics(next http.Handler) http.HandlerFunc {
 		rw := &ResponseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
 		route := r.Pattern
-		if route == "GET /healthz" {
+		if route == common.HealthzPattern {
 			return
 		}
 		if route == "" {

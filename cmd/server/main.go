@@ -102,6 +102,7 @@ func run() error {
 		Correlation:    grpchandler.NewCorrelationHandler(logger),
 		MaxBodySize:    int(conf.MaxBodySize),
 		MetricsHandler: grpchandler.NewMetricsHandler(metr),
+		Logger:         logger,
 	})
 	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
 	logger.Info("grpc server starting", "addr", grpcAddr)
@@ -120,46 +121,59 @@ func run() error {
 	go func() {
 		lis, err := net.Listen("tcp", grpcAddr)
 		if err != nil {
-			errCh <- err
+			errCh <- fmt.Errorf("grpc server: %w", err)
 			return
 		}
-		errCh <- grpcSrv.Serve(lis)
+		if err := grpcSrv.Serve(lis); err != nil {
+			errCh <- fmt.Errorf("grpc server: %w", err)
+		}
 	}()
-	go func() { errCh <- srv.ListenAndServe() }()
-	go func() { errCh <- metricsSrv.ListenAndServe() }()
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			errCh <- fmt.Errorf("server: %w", err)
+		}
+	}()
+	go func() {
+		if err := metricsSrv.ListenAndServe(); err != nil {
+			errCh <- fmt.Errorf("metrics server: %w", err)
+		}
+	}()
 
+	var runErr error
 	select {
-	case err := <-errCh:
-		return err
+	case runErr = <-errCh:
 	case <-ctx.Done():
 		// a signal arrived
 	}
-
 	stop()
+
+	grpcHs.Shutdown()
 
 	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
-	grpcHs.Shutdown()
-	grpcCh := make(chan struct{})
-	go func() { grpcSrv.GracefulStop(); close(grpcCh) }()
-	metricsErr := make(chan error, 1)
-	go func() { metricsErr <- metricsSrv.Shutdown(shutdownCtx) }()
-	err = srv.Shutdown(shutdownCtx)
+
+	grpcDone := make(chan struct{})
+	go func() { grpcSrv.GracefulStop(); close(grpcDone) }()
+
+	httpErr := srv.Shutdown(shutdownCtx)
+	if httpErr != nil {
+		srv.Close()
+	}
 	select {
-	case <-grpcCh:
+	case <-grpcDone:
 	case <-shutdownCtx.Done():
 		grpcSrv.Stop()
-	}
-	if mErr := <-metricsErr; mErr != nil {
-		metricsSrv.Close()
-		err = errors.Join(err, mErr)
+		<-grpcDone
 	}
 
-	if err != nil {
-		srv.Close()
-		return fmt.Errorf("shutdown server: %w", err)
+	metricsCtx, cancelMetrics := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelMetrics()
+	metricsErr := metricsSrv.Shutdown(metricsCtx)
+	if metricsErr != nil {
+		metricsSrv.Close()
 	}
+
 	logger.Info("server stopped")
-	return nil
+	return errors.Join(runErr, httpErr, metricsErr)
 }

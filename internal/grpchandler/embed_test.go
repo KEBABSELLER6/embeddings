@@ -97,7 +97,7 @@ func TestEmbed(t *testing.T) {
 			name:        "invalid output",
 			input:       []string{"hello"},
 			svc:         &fakeEmbeddingService{err: common.ErrInvalidOutput},
-			wantCode:    codes.Internal,
+			wantCode:    codes.Unavailable,
 			wantMessage: "invalid output",
 			wantCalls:   1,
 			wantInput:   []string{"hello"},

@@ -2,6 +2,7 @@ package grpchandler
 
 import (
 	"context"
+	"log/slog"
 	"runtime/debug"
 
 	embeddingsv1 "github.com/KEBABSELLER6/embeddings/gen/embeddings/v1"
@@ -20,23 +21,24 @@ type Handlers struct {
 	MaxBodySize    int
 	Correlation    *CorrelationHandler
 	MetricsHandler *MetricsHandler
+	Logger         *slog.Logger
 }
 
 func NewServer(h Handlers) (*grpc.Server, *health.Server) {
 	r := func(ctx context.Context, p any) (err error) {
-		h.Logging.logger.ErrorContext(ctx, "grpc panic", "panic", p, "stack", string(debug.Stack()))
+		h.Logger.ErrorContext(ctx, "grpc panic", "panic", p, "stack", string(debug.Stack()))
 		return status.Error(codes.Internal, "internal error")
 	}
 
 	hs := health.NewServer()
-	hs.SetServingStatus("embeddings.v1.EmbeddingService", healthpb.HealthCheckResponse_SERVING)
+	hs.SetServingStatus(embeddingsv1.EmbeddingService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 	srv := grpc.NewServer(
 		grpc.MaxRecvMsgSize(h.MaxBodySize),
 		grpc.ChainUnaryInterceptor(
 			h.MetricsHandler.Metrics(),
-			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandlerContext(r)),
 			h.Correlation.CorrelationID(),
 			h.Logging.Logging(),
+			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandlerContext(r)),
 		),
 	)
 

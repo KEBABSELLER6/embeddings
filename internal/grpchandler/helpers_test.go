@@ -125,6 +125,7 @@ func startTestServerFull(t *testing.T, svc common.EmbeddingService) *testServer 
 		Correlation:    NewCorrelationHandler(logger),
 		MetricsHandler: NewMetricsHandler(m),
 		MaxBodySize:    testMaxBodySize,
+		Logger:         logger,
 	})
 
 	lis := bufconn.Listen(1 << 20)
