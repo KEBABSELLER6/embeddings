@@ -12,6 +12,8 @@ import (
 	"uuid"
 
 	"github.com/KEBABSELLER6/embeddings/internal/common"
+	"github.com/KEBABSELLER6/embeddings/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -21,17 +23,28 @@ const testMaxBodySize = 64
 // newTestServer runs the full router on a real server. A recorder is not
 // enough here: only the server's own ResponseWriter reacts to MaxBytesReader
 // by closing the connection.
-func newTestServer(t *testing.T, svc EmbeddingService) *httptest.Server {
+func newTestServer(t *testing.T, svc common.EmbeddingService) *httptest.Server {
 	t.Helper()
 
+	srv, _ := newTestServerWithMetrics(t, svc)
+	return srv
+}
+
+// newTestServerWithMetrics also returns the request metrics, backed by a
+// registry private to this test.
+func newTestServerWithMetrics(t *testing.T, svc common.EmbeddingService) (*httptest.Server, *metrics.Metrics) {
+	t.Helper()
+
+	m := metrics.New(prometheus.NewRegistry())
 	router := NewRouter(Handlers{
 		Logger:           slog.New(slog.DiscardHandler),
 		MaxBodySize:      testMaxBodySize,
 		EmbeddingHandler: NewEmbeddingHandler(svc, newTestErrorHandler(), testMaxInputs),
+		MetricsHandler:   NewMetricsHandler(m),
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	return srv
+	return srv, m
 }
 
 func do(t *testing.T, srv *httptest.Server, method, path, body string, header http.Header) (*http.Response, []byte) {

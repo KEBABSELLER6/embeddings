@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"context"
 	"encoding/json/v2"
 	"fmt"
 	"net/http"
@@ -9,17 +8,13 @@ import (
 	"github.com/KEBABSELLER6/embeddings/internal/common"
 )
 
-type EmbeddingService interface {
-	Embed(ctx context.Context, input []string) (*common.EmbeddingResponse, error)
-}
-
 type EmbeddingHandler struct {
-	service   EmbeddingService
+	service   common.EmbeddingService
 	eh        *ErrorHandler
 	maxInputs int
 }
 
-func NewEmbeddingHandler(service EmbeddingService, eh *ErrorHandler, maxInputs int) *EmbeddingHandler {
+func NewEmbeddingHandler(service common.EmbeddingService, eh *ErrorHandler, maxInputs int) *EmbeddingHandler {
 	return &EmbeddingHandler{service: service, eh: eh, maxInputs: maxInputs}
 }
 

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -12,8 +13,13 @@ import (
 	"time"
 
 	"github.com/KEBABSELLER6/embeddings/internal/config"
+	"github.com/KEBABSELLER6/embeddings/internal/grpchandler"
 	"github.com/KEBABSELLER6/embeddings/internal/handler"
 	"github.com/KEBABSELLER6/embeddings/internal/logging"
+	"github.com/KEBABSELLER6/embeddings/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/collectors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -54,18 +60,27 @@ func run() error {
 		"shutdown_timeout", conf.Timeouts.Shutdown,
 		"max_inputs", conf.MaxInputs,
 		"max_body_size", conf.MaxBodySize,
+		"grpc_port", conf.GRPCPort,
+		"metrics_port", conf.MetricsPort,
 	)
 
 	embedder, err := NewEmbedder(conf, cli)
 	if err != nil {
 		return fmt.Errorf("create embedder: %w", err)
 	}
+	reg := prometheus.NewRegistry()
+	metr := metrics.New(reg)
+	reg.MustRegister(
+		collectors.NewGoCollector(),
+		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
+	)
 
 	eh := handler.NewErrorHandler(logger)
 	router := handler.NewRouter(handler.Handlers{
 		Logger:           logger,
 		MaxBodySize:      conf.MaxBodySize,
 		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh, conf.MaxInputs),
+		MetricsHandler:   handler.NewMetricsHandler(metr),
 	})
 
 	addr := fmt.Sprintf(":%s", conf.Port)
@@ -80,26 +95,85 @@ func run() error {
 		WriteTimeout:      conf.Timeouts.Upstream + 5*time.Second,
 	}
 
-	errCh := make(chan error, 1)
-	go func() { errCh <- srv.ListenAndServe() }()
+	grpcEH := grpchandler.NewErrorHandler(logger)
+	grpcSrv, grpcHs := grpchandler.NewServer(grpchandler.Handlers{
+		Embed:          grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
+		Logging:        grpchandler.NewLoggingHandler(logger),
+		Correlation:    grpchandler.NewCorrelationHandler(logger),
+		MaxBodySize:    int(conf.MaxBodySize),
+		MetricsHandler: grpchandler.NewMetricsHandler(metr),
+		Logger:         logger,
+	})
+	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
+	logger.Info("grpc server starting", "addr", grpcAddr)
 
+	metricsAddr := fmt.Sprintf(":%s", conf.MetricsPort)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	metricsSrv := &http.Server{
+		Addr:              metricsAddr,
+		Handler:           metricsMux,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+	logger.Info("metrics server starting", "addr", metricsAddr)
+
+	errCh := make(chan error, 3)
+	go func() {
+		lis, err := net.Listen("tcp", grpcAddr)
+		if err != nil {
+			errCh <- fmt.Errorf("grpc server: %w", err)
+			return
+		}
+		if err := grpcSrv.Serve(lis); err != nil {
+			errCh <- fmt.Errorf("grpc server: %w", err)
+		}
+	}()
+	go func() {
+		if err := srv.ListenAndServe(); err != nil {
+			errCh <- fmt.Errorf("server: %w", err)
+		}
+	}()
+	go func() {
+		if err := metricsSrv.ListenAndServe(); err != nil {
+			errCh <- fmt.Errorf("metrics server: %w", err)
+		}
+	}()
+
+	var runErr error
 	select {
-	case err := <-errCh:
-		return err
+	case runErr = <-errCh:
 	case <-ctx.Done():
 		// a signal arrived
 	}
-
 	stop()
+
+	grpcHs.Shutdown()
 
 	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
-	err = srv.Shutdown(shutdownCtx)
-	if err != nil {
+
+	grpcDone := make(chan struct{})
+	go func() { grpcSrv.GracefulStop(); close(grpcDone) }()
+
+	httpErr := srv.Shutdown(shutdownCtx)
+	if httpErr != nil {
 		srv.Close()
-		return fmt.Errorf("shutdown: %w", err)
 	}
+	select {
+	case <-grpcDone:
+	case <-shutdownCtx.Done():
+		grpcSrv.Stop()
+		<-grpcDone
+	}
+
+	metricsCtx, cancelMetrics := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancelMetrics()
+	metricsErr := metricsSrv.Shutdown(metricsCtx)
+	if metricsErr != nil {
+		metricsSrv.Close()
+	}
+
 	logger.Info("server stopped")
-	return nil
+	return errors.Join(runErr, httpErr, metricsErr)
 }

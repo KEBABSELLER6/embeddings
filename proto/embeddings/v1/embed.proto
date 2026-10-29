@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+ package embeddings.v1;
+
+option go_package = "github.com/KEBABSELLER6/embeddings/gen/embeddings/v1;embeddingsv1";
+
+service EmbeddingService {
+  rpc Embed(EmbedRequest) returns (EmbedResponse);
+}
+
+message EmbedRequest {
+  repeated string input = 1;
+}
+
+message EmbedResponse {
+  string model = 1;
+  repeated Embedding embeddings = 2;
+}
+
+message Embedding {
+  repeated float values = 1;
+}
+

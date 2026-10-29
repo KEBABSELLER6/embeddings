@@ -11,6 +11,8 @@ import (
 
 var envKeys = []string{
 	"PORT",
+	"GRPC_PORT",
+	"METRICS_PORT",
 	"MAX_BODY_SIZE",
 	"PROVIDER",
 	"OLLAMA_MODEL",
@@ -54,6 +56,8 @@ func TestConfigure(t *testing.T) {
 	defaultOllamaConfig := func(log LogConfig) *Config {
 		return &Config{
 			Port:        "8080",
+			GRPCPort:    "50051",
+			MetricsPort: "9090",
 			MaxBodySize: 512000,
 			Provider:    ProviderOllama,
 			Ollama: &OllamaConfig{
@@ -77,6 +81,8 @@ func TestConfigure(t *testing.T) {
 			env:  ollamaEnv(nil),
 			want: &Config{
 				Port:        "8080",
+				GRPCPort:    "50051",
+				MetricsPort: "9090",
 				MaxBodySize: 512000,
 				Provider:    ProviderOllama,
 				Ollama: &OllamaConfig{
@@ -89,10 +95,12 @@ func TestConfigure(t *testing.T) {
 			},
 		},
 		{
-			name: "custom port and body size",
-			env:  ollamaEnv(map[string]string{"PORT": "9000", "MAX_BODY_SIZE": "256000"}),
+			name: "custom ports and body size",
+			env:  ollamaEnv(map[string]string{"PORT": "9000", "GRPC_PORT": "9001", "METRICS_PORT": "9002", "MAX_BODY_SIZE": "256000"}),
 			want: &Config{
 				Port:        "9000",
+				GRPCPort:    "9001",
+				MetricsPort: "9002",
 				MaxBodySize: 256000,
 				Provider:    ProviderOllama,
 				Ollama: &OllamaConfig{
@@ -105,6 +113,107 @@ func TestConfigure(t *testing.T) {
 			},
 		},
 		{
+			name: "ports at the bounds of the valid range",
+			env:  ollamaEnv(map[string]string{"PORT": "1", "GRPC_PORT": "65535", "METRICS_PORT": "2"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.Port = "1"
+				c.GRPCPort = "65535"
+				c.MetricsPort = "2"
+				return c
+			}(),
+		},
+		{
+			name:    "port is not a number",
+			env:     ollamaEnv(map[string]string{"PORT": "abc"}),
+			wantErr: "failed to parse PORT",
+		},
+		{
+			name:    "port is a decimal",
+			env:     ollamaEnv(map[string]string{"PORT": "80.5"}),
+			wantErr: "failed to parse PORT",
+		},
+		{
+			name:    "port is zero",
+			env:     ollamaEnv(map[string]string{"PORT": "0"}),
+			wantErr: "PORT must be between 1-65535",
+		},
+		{
+			name:    "port is negative",
+			env:     ollamaEnv(map[string]string{"PORT": "-1"}),
+			wantErr: "PORT must be between 1-65535",
+		},
+		{
+			name:    "port is above the valid range",
+			env:     ollamaEnv(map[string]string{"PORT": "65536"}),
+			wantErr: "PORT must be between 1-65535",
+		},
+		{
+			name:    "grpc port is not a number",
+			env:     ollamaEnv(map[string]string{"GRPC_PORT": "abc"}),
+			wantErr: "failed to parse GRPC_PORT",
+		},
+		{
+			name:    "grpc port is zero",
+			env:     ollamaEnv(map[string]string{"GRPC_PORT": "0"}),
+			wantErr: "GRPC_PORT must be between 1-65535",
+		},
+		{
+			name:    "grpc port is above the valid range",
+			env:     ollamaEnv(map[string]string{"GRPC_PORT": "65536"}),
+			wantErr: "GRPC_PORT must be between 1-65535",
+		},
+		{
+			name:    "metrics port is not a number",
+			env:     ollamaEnv(map[string]string{"METRICS_PORT": "abc"}),
+			wantErr: "failed to parse METRICS_PORT",
+		},
+		{
+			name:    "metrics port is zero",
+			env:     ollamaEnv(map[string]string{"METRICS_PORT": "0"}),
+			wantErr: "METRICS_PORT must be between 1-65535",
+		},
+		{
+			name:    "metrics port is above the valid range",
+			env:     ollamaEnv(map[string]string{"METRICS_PORT": "65536"}),
+			wantErr: "METRICS_PORT must be between 1-65535",
+		},
+		{
+			name:    "metrics port equals port",
+			env:     ollamaEnv(map[string]string{"PORT": "9000", "METRICS_PORT": "9000"}),
+			wantErr: "PORT, GRPC_PORT, METRICS_PORT must be unique",
+		},
+		{
+			name:    "metrics port equals grpc port",
+			env:     ollamaEnv(map[string]string{"GRPC_PORT": "9000", "METRICS_PORT": "9000"}),
+			wantErr: "PORT, GRPC_PORT, METRICS_PORT must be unique",
+		},
+		{
+			name:    "metrics port equals the default port",
+			env:     ollamaEnv(map[string]string{"METRICS_PORT": "8080"}),
+			wantErr: "PORT, GRPC_PORT, METRICS_PORT must be unique",
+		},
+		{
+			name:    "port equals the default metrics port",
+			env:     ollamaEnv(map[string]string{"PORT": "9090"}),
+			wantErr: "PORT, GRPC_PORT, METRICS_PORT must be unique",
+		},
+		{
+			name:    "grpc port equals port",
+			env:     ollamaEnv(map[string]string{"PORT": "9000", "GRPC_PORT": "9000"}),
+			wantErr: "PORT, GRPC_PORT, METRICS_PORT must be unique",
+		},
+		{
+			name:    "grpc port equals the default port",
+			env:     ollamaEnv(map[string]string{"GRPC_PORT": "8080"}),
+			wantErr: "PORT, GRPC_PORT, METRICS_PORT must be unique",
+		},
+		{
+			name:    "port equals the default grpc port",
+			env:     ollamaEnv(map[string]string{"PORT": "50051"}),
+			wantErr: "PORT, GRPC_PORT, METRICS_PORT must be unique",
+		},
+		{
 			name: "custom ollama model and endpoint",
 			env: ollamaEnv(map[string]string{
 				"OLLAMA_MODEL":        "mxbai-embed-large",
@@ -112,6 +221,8 @@ func TestConfigure(t *testing.T) {
 			}),
 			want: &Config{
 				Port:        "8080",
+				GRPCPort:    "50051",
+				MetricsPort: "9090",
 				MaxBodySize: 512000,
 				Provider:    ProviderOllama,
 				Ollama: &OllamaConfig{

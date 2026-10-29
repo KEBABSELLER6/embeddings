@@ -1,4 +1,4 @@
-.PHONY: run test dev-up dev-rst build
+.PHONY: run test dev-up dev-rst build proto vet
 
 run:
 	go run ./cmd/server
@@ -9,9 +9,18 @@ build:
 test:
 	go test -race ./...
 
+vet:
+	go vet ./...
+
 dev-up:
 	docker compose up -d
 	docker compose exec ollama ollama pull nomic-embed-text
 
 dev-rst:
 	docker compose down -v --remove-orphans
+
+proto:
+	protoc -I proto \
+		--go_out=gen --go_opt=paths=source_relative \
+		--go-grpc_out=gen --go-grpc_opt=paths=source_relative \
+		proto/embeddings/v1/*.proto

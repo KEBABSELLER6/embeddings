@@ -28,7 +28,7 @@ func TestLoggingMiddleware(t *testing.T) {
 	capture := &captureHandler{}
 	// Wrapped like in main, so the correlation id comes from the request context.
 	logger := slog.New(logging.NewContextHandler(capture))
-	h := &LoggingHandler{slog: logger}
+	h := &LoggingHandler{logger: logger}
 
 	req := newRequestWithCorrelationID(http.MethodGet, "/healthz", nil)
 	rr := httptest.NewRecorder()

@@ -14,6 +14,24 @@ func CorrelationIDFromContext(ctx context.Context) string {
 }
 
 func WithCorrelationID(ctx context.Context, id string) context.Context {
-	context := context.WithValue(ctx, correlationKey, id)
-	return context
+	ctx = context.WithValue(ctx, correlationKey, id)
+	return ctx
+}
+
+const MaxCorrelationIDLen = 128
+
+func ValidCorrelationID(id string) bool {
+	if id == "" || len(id) > MaxCorrelationIDLen {
+		return false
+	}
+	for i := 0; i < len(id); i++ {
+		c := id[i]
+		switch {
+		case 'a' <= c && c <= 'z', 'A' <= c && c <= 'Z', '0' <= c && c <= '9':
+		case c == '-', c == '_', c == '.':
+		default:
+			return false
+		}
+	}
+	return true
 }
