@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/KEBABSELLER6/embeddings/internal/auth"
+	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/KEBABSELLER6/embeddings/internal/config"
 	"github.com/KEBABSELLER6/embeddings/internal/grpchandler"
 	"github.com/KEBABSELLER6/embeddings/internal/handler"
@@ -81,18 +82,16 @@ func run() error {
 	apiKey := auth.NewAPIKeyService(conf.APIKeyAuth.APIKey)
 
 	eh := handler.NewErrorHandler(logger)
-	ready := handler.NewReadiness()
 	ak := handler.NewAPIKeyAuth(apiKey, conf.APIKeyAuth.Enabled(), eh)
 	router := handler.NewRouter(handler.Handlers{
 		Logger:           logger,
 		MaxBodySize:      conf.MaxBodySize,
 		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh, conf.MaxInputs),
 		MetricsHandler:   handler.NewMetricsHandler(metr),
-		Readiness:        ready,
 		Auth:             ak,
 	})
 
-	addr := fmt.Sprintf(":%s", conf.Port)
+	addr := net.JoinHostPort(conf.ListenHost, conf.Port)
 	logger.Info("server starting", "addr", addr)
 
 	srv := &http.Server{
@@ -118,12 +117,15 @@ func run() error {
 		ReflectionEnabled: conf.GRPCReflection,
 		APIKeyAuthHandler: grpcAK,
 	})
-	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
+	grpcAddr := net.JoinHostPort(conf.ListenHost, conf.GRPCPort)
 	logger.Info("grpc server starting", "addr", grpcAddr)
 
 	metricsAddr := fmt.Sprintf(":%s", conf.MetricsPort)
 	metricsMux := http.NewServeMux()
+	ready := handler.NewReadiness()
 	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	metricsMux.HandleFunc(common.HealthzPattern, handler.HandleHealthRequest)
+	metricsMux.HandleFunc(common.ReadyzPattern, ready.HandleReadyRequest)
 	metricsSrv := &http.Server{
 		Addr:              metricsAddr,
 		Handler:           metricsMux,

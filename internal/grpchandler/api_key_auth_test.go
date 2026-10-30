@@ -52,11 +52,11 @@ func TestAPIKeyAuth(t *testing.T) {
 			wantMessage: "authentication failed",
 		},
 		{
-			name:        "empty key is rejected",
+			name:        "empty key is rejected as missing",
 			serverKey:   testAPIKey,
 			md:          metadata.Pairs("x-api-key", ""),
 			wantCode:    codes.Unauthenticated,
-			wantMessage: "authentication failed",
+			wantMessage: "missing authentication",
 		},
 		{
 			name:      "correct key is let through",

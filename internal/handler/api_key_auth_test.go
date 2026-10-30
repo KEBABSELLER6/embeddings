@@ -71,7 +71,7 @@ func TestAPIKeyAuth(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := &fakeEmbeddingService{resp: okResp}
-			srv, _, _ := newTestServerWithAPIKey(t, svc, tt.serverKey)
+			srv, _ := newTestServerWithAPIKey(t, svc, tt.serverKey)
 
 			resp, body := do(t, srv, http.MethodPost, "/api/v1/embed", `{"input":["hi"]}`, tt.header)
 
@@ -87,17 +87,8 @@ func TestAPIKeyAuth(t *testing.T) {
 		})
 	}
 
-	t.Run("probes stay open when auth is on", func(t *testing.T) {
-		srv, _, _ := newTestServerWithAPIKey(t, &fakeEmbeddingService{}, testAPIKey)
-
-		for _, path := range []string{"/healthz", "/readyz"} {
-			resp, _ := do(t, srv, http.MethodGet, path, "", nil)
-			assert.Equal(t, http.StatusOK, resp.StatusCode, path)
-		}
-	})
-
 	t.Run("rejected requests are counted in metrics", func(t *testing.T) {
-		srv, m, _ := newTestServerWithAPIKey(t, &fakeEmbeddingService{}, testAPIKey)
+		srv, m := newTestServerWithAPIKey(t, &fakeEmbeddingService{}, testAPIKey)
 
 		do(t, srv, http.MethodPost, "/api/v1/embed", `{"input":["hi"]}`, nil)
 
@@ -112,7 +103,6 @@ func TestNewRouterRequiresAuth(t *testing.T) {
 		NewRouter(Handlers{
 			Logger:           slog.New(slog.DiscardHandler),
 			EmbeddingHandler: NewEmbeddingHandler(&fakeEmbeddingService{}, newTestErrorHandler(), testMaxInputs),
-			Readiness:        NewReadiness(),
 		})
 	})
 }

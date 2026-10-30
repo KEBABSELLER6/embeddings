@@ -14,5 +14,5 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 FROM gcr.io/distroless/static-debian13
 
 COPY --from=builder /server /server
-USER nonroot:nonroot
+USER 65532:65532
 ENTRYPOINT ["/server"]

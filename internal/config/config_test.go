@@ -29,6 +29,7 @@ var envKeys = []string{
 	"BATCH_SIZE",
 	"GRPC_REFLECTION",
 	"API_KEY",
+	"LISTEN_HOST",
 }
 
 // setEnv clears every variable Configure reads, then applies env, so a test
@@ -365,6 +366,15 @@ func TestConfigure(t *testing.T) {
 			name: "grpc reflection is explicitly disabled",
 			env:  ollamaEnv(map[string]string{"GRPC_REFLECTION": "false"}),
 			want: defaultOllamaConfig(defaultLog),
+		},
+		{
+			name: "listen host is set",
+			env:  ollamaEnv(map[string]string{"LISTEN_HOST": "127.0.0.1"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.ListenHost = "127.0.0.1"
+				return c
+			}(),
 		},
 		{
 			name: "api key is set",

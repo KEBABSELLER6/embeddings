@@ -3,8 +3,6 @@ package handler
 import (
 	"log/slog"
 	"net/http"
-
-	"github.com/KEBABSELLER6/embeddings/internal/common"
 )
 
 type Handlers struct {
@@ -12,7 +10,6 @@ type Handlers struct {
 	EmbeddingHandler *EmbeddingHandler
 	Logger           *slog.Logger
 	MetricsHandler   *MetricsHandler
-	Readiness        *Readiness
 	Auth             *APIKeyAuthHandler
 }
 
@@ -23,8 +20,6 @@ func NewRouter(h Handlers) http.Handler {
 
 	mux := http.NewServeMux()
 
-	mux.HandleFunc(common.HealthzPattern, HandleHealthRequest)
-	mux.HandleFunc(common.ReadyzPattern, h.Readiness.HandleReadyRequest)
 	mux.HandleFunc("POST /api/v1/embed", h.Auth.Authenticate(http.HandlerFunc(h.EmbeddingHandler.HandleEmbeddingRequest)))
 
 	logging := NewLoggingHandler(h.Logger)

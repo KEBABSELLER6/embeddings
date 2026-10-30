@@ -32,6 +32,7 @@ type Config struct {
 	BatchSize      int
 	GRPCReflection bool
 	APIKeyAuth     APIKeyAuth
+	ListenHost     string
 }
 
 type OllamaConfig struct {
@@ -282,6 +283,7 @@ func Configure() (*Config, error) {
 	}
 
 	apiKey := os.Getenv("API_KEY")
+	listenHost := os.Getenv("LISTEN_HOST")
 
 	config := &Config{
 		Port:           port,
@@ -297,6 +299,7 @@ func Configure() (*Config, error) {
 		OpenAI:         openaiConfig,
 		GRPCReflection: grpcRef,
 		APIKeyAuth:     APIKeyAuth{APIKey: apiKey},
+		ListenHost:     listenHost,
 	}
 
 	return config, nil

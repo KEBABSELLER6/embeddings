@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sidecar-poc
+spec:
+  selector:
+    matchLabels:
+      app: sidecar-poc
+  template:
+    metadata:
+      labels:
+        app: sidecar-poc
+    spec:
+      initContainers:
+        - name: embedder
+          image: embeddings:dev
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              memory: 128Mi
+              cpu: 100m
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          restartPolicy: Always
+          env:
+            - name: PROVIDER
+              value: openai
+            - name: OPENAI_MODEL
+              value: text-embedding-3-small
+            - name: OPENAI_BASE_URL
+              value: https://api.openai.com/v1
+            - name: OPENAI_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: openai-api-key
+                  name: embedder
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: embedder
+            - name: LISTEN_HOST
+              value: "127.0.0.1"
+            - name: DRAIN_DELAY
+              value: 0s
+            - name: UPSTREAM_TIMEOUT
+              value: 10s
+            - name: SHUTDOWN_TIMEOUT
+              value: 15s
+            - name: GOMEMLIMIT
+              value: 200MiB
+          ports:
+            - name: admin
+              containerPort: 9090
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            periodSeconds: 1
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+      containers:
+        - name: app
+          image: curlimages/curl
+          command: ["sleep", "infinity"]
