@@ -69,6 +69,7 @@ func TestServerRegistersServices(t *testing.T) {
 				MaxBodySize:       testMaxBodySize,
 				StreamCanceller:   NewStreamCanceller(),
 				ReflectionEnabled: reflection,
+				APIKeyAuthHandler: NewAPIKeyAuth(nil, false, NewErrorHandler(nil)),
 			})
 
 			info := srv.GetServiceInfo()

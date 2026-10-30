@@ -47,6 +47,17 @@ func (h *ErrorHandler) HandleError(w http.ResponseWriter, r *http.Request, err e
 		return
 	}
 
+	if errors.Is(err, common.ErrAuthFailed) {
+		h.logger.WarnContext(r.Context(), "unauthenticated", "err", err)
+		buildError(w, "authentication failed", correlationID, http.StatusUnauthorized)
+		return
+	}
+	if errors.Is(err, common.ErrMissingAPIKey) {
+		h.logger.WarnContext(r.Context(), "unauthenticated", "err", err)
+		buildError(w, "api key is missing", correlationID, http.StatusUnauthorized)
+		return
+	}
+
 	h.logger.ErrorContext(r.Context(), "request failed", "err", err)
 
 	var maxErr *http.MaxBytesError

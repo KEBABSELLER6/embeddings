@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	embeddingsv1 "github.com/KEBABSELLER6/embeddings/gen/embeddings/v1"
+	"github.com/KEBABSELLER6/embeddings/internal/auth"
 	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/KEBABSELLER6/embeddings/internal/logging"
 	"github.com/KEBABSELLER6/embeddings/internal/metrics"
@@ -117,19 +118,29 @@ type testServer struct {
 func startTestServerFull(t *testing.T, svc common.EmbeddingService) *testServer {
 	t.Helper()
 
+	return startTestServerWithAPIKey(t, svc, "")
+}
+
+// startTestServerWithAPIKey requires apiKey on non-health calls, like main
+// does with API_KEY set. An empty apiKey turns auth off.
+func startTestServerWithAPIKey(t *testing.T, svc common.EmbeddingService, apiKey string) *testServer {
+	t.Helper()
+
 	capture := &captureHandler{}
 	logger := slog.New(logging.NewContextHandler(capture))
 	m := metrics.New(prometheus.NewRegistry())
 	streams := NewStreamCanceller()
+	eh := NewErrorHandler(logger)
 
 	srv, hs := NewServer(Handlers{
-		Embed:           NewEmbeddingHandler(svc, NewErrorHandler(logger), testMaxInputs),
-		Logging:         NewLoggingHandler(logger),
-		Correlation:     NewCorrelationHandler(logger),
-		MetricsHandler:  NewMetricsHandler(m),
-		MaxBodySize:     testMaxBodySize,
-		Logger:          logger,
-		StreamCanceller: streams,
+		Embed:             NewEmbeddingHandler(svc, eh, testMaxInputs),
+		Logging:           NewLoggingHandler(logger),
+		Correlation:       NewCorrelationHandler(logger),
+		MetricsHandler:    NewMetricsHandler(m),
+		MaxBodySize:       testMaxBodySize,
+		Logger:            logger,
+		StreamCanceller:   streams,
+		APIKeyAuthHandler: NewAPIKeyAuth(auth.NewAPIKeyService(apiKey), apiKey != "", eh),
 	})
 
 	lis := bufconn.Listen(1 << 20)

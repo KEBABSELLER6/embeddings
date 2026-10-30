@@ -28,6 +28,7 @@ var envKeys = []string{
 	"DRAIN_DELAY",
 	"BATCH_SIZE",
 	"GRPC_REFLECTION",
+	"API_KEY",
 }
 
 // setEnv clears every variable Configure reads, then applies env, so a test
@@ -366,6 +367,15 @@ func TestConfigure(t *testing.T) {
 			want: defaultOllamaConfig(defaultLog),
 		},
 		{
+			name: "api key is set",
+			env:  ollamaEnv(map[string]string{"API_KEY": "s3cret-key"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.APIKeyAuth = APIKeyAuth{APIKey: "s3cret-key"}
+				return c
+			}(),
+		},
+		{
 			name:    "grpc reflection is not a bool",
 			env:     ollamaEnv(map[string]string{"GRPC_REFLECTION": "maybe"}),
 			wantErr: "failed to parse GRPC_REFLECTION",
@@ -603,4 +613,39 @@ func TestConfigure(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAPIKeyAuthEnabled(t *testing.T) {
+	assert.False(t, APIKeyAuth{}.Enabled(), "no key means auth is off")
+	assert.True(t, APIKeyAuth{APIKey: "s3cret-key"}.Enabled())
+}
+
+func TestConfigureAPIKeyAuth(t *testing.T) {
+	base := map[string]string{
+		"PROVIDER":            "ollama",
+		"OLLAMA_MODEL":        "nomic-embed-text",
+		"OLLAMA_ENDPOINT_URL": "http://localhost:11434/api/embed",
+	}
+
+	t.Run("unset API_KEY turns auth off", func(t *testing.T) {
+		setEnv(t, base)
+
+		c, err := Configure()
+
+		require.NoError(t, err)
+		assert.False(t, c.APIKeyAuth.Enabled())
+	})
+
+	t.Run("set API_KEY turns auth on", func(t *testing.T) {
+		env := map[string]string{"API_KEY": "s3cret-key"}
+		for k, v := range base {
+			env[k] = v
+		}
+		setEnv(t, env)
+
+		c, err := Configure()
+
+		require.NoError(t, err)
+		assert.True(t, c.APIKeyAuth.Enabled())
+	})
 }

@@ -31,12 +31,19 @@ type Config struct {
 	MetricsPort    string
 	BatchSize      int
 	GRPCReflection bool
+	APIKeyAuth     APIKeyAuth
 }
 
 type OllamaConfig struct {
 	Model    string
 	Endpoint string
 }
+
+type APIKeyAuth struct {
+	APIKey string
+}
+
+func (a APIKeyAuth) Enabled() bool { return a.APIKey != "" }
 
 type OpenAIConfig struct {
 	APIKey  string
@@ -274,6 +281,8 @@ func Configure() (*Config, error) {
 		return nil, fmt.Errorf("unsupported LOG_FORMAT: %q", logFormat)
 	}
 
+	apiKey := os.Getenv("API_KEY")
+
 	config := &Config{
 		Port:           port,
 		MaxBodySize:    maxBodySize,
@@ -287,6 +296,7 @@ func Configure() (*Config, error) {
 		BatchSize:      int(batchSize),
 		OpenAI:         openaiConfig,
 		GRPCReflection: grpcRef,
+		APIKeyAuth:     APIKeyAuth{APIKey: apiKey},
 	}
 
 	return config, nil

@@ -6,7 +6,10 @@ import (
 	"runtime/debug"
 
 	embeddingsv1 "github.com/KEBABSELLER6/embeddings/gen/embeddings/v1"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/auth"
 	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/recovery"
+	"github.com/grpc-ecosystem/go-grpc-middleware/v2/interceptors/selector"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/health"
@@ -24,9 +27,14 @@ type Handlers struct {
 	Logger            *slog.Logger
 	StreamCanceller   *StreamCanceller
 	ReflectionEnabled bool
+	APIKeyAuthHandler *APIKeyAuthHandler
 }
 
 func NewServer(h Handlers) (*grpc.Server, *health.Server) {
+	if h.APIKeyAuthHandler == nil {
+		panic("grpc: APIKeyAuthHandler is required")
+	}
+
 	logger := h.Logger
 	if logger == nil {
 		logger = slog.Default()
@@ -41,6 +49,10 @@ func NewServer(h Handlers) (*grpc.Server, *health.Server) {
 		return status.Error(codes.Internal, "internal error")
 	}
 
+	allButHealthZ := func(ctx context.Context, callMeta interceptors.CallMeta) bool {
+		return healthpb.Health_ServiceDesc.ServiceName != callMeta.Service
+	}
+
 	hs := health.NewServer()
 	hs.SetServingStatus(embeddingsv1.EmbeddingService_ServiceDesc.ServiceName, healthpb.HealthCheckResponse_SERVING)
 	srv := grpc.NewServer(
@@ -49,6 +61,7 @@ func NewServer(h Handlers) (*grpc.Server, *health.Server) {
 			h.MetricsHandler.Metrics(),
 			h.Correlation.CorrelationID(),
 			h.Logging.Logging(),
+			selector.UnaryServerInterceptor(auth.UnaryServerInterceptor(h.APIKeyAuthHandler.APIKeyAuth), selector.MatchFunc(allButHealthZ)),
 			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandlerContext(r)),
 		),
 		grpc.ChainStreamInterceptor(

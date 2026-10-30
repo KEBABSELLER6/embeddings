@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KEBABSELLER6/embeddings/internal/auth"
 	"github.com/KEBABSELLER6/embeddings/internal/config"
 	"github.com/KEBABSELLER6/embeddings/internal/grpchandler"
 	"github.com/KEBABSELLER6/embeddings/internal/handler"
@@ -64,6 +65,7 @@ func run() error {
 		"metrics_port", conf.MetricsPort,
 		"batch_size", conf.BatchSize,
 		"grpc_reflection", conf.GRPCReflection,
+		"api_key_enabled", conf.APIKeyAuth.Enabled(),
 	)
 
 	embedder, err := NewEmbedder(conf, cli, conf.BatchSize)
@@ -76,15 +78,18 @@ func run() error {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
+	apiKey := auth.NewAPIKeyService(conf.APIKeyAuth.APIKey)
 
 	eh := handler.NewErrorHandler(logger)
 	ready := handler.NewReadiness()
+	ak := handler.NewAPIKeyAuth(apiKey, conf.APIKeyAuth.Enabled(), eh)
 	router := handler.NewRouter(handler.Handlers{
 		Logger:           logger,
 		MaxBodySize:      conf.MaxBodySize,
 		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh, conf.MaxInputs),
 		MetricsHandler:   handler.NewMetricsHandler(metr),
 		Readiness:        ready,
+		Auth:             ak,
 	})
 
 	addr := fmt.Sprintf(":%s", conf.Port)
@@ -101,6 +106,7 @@ func run() error {
 
 	grpcEH := grpchandler.NewErrorHandler(logger)
 	streams := grpchandler.NewStreamCanceller()
+	grpcAK := grpchandler.NewAPIKeyAuth(apiKey, conf.APIKeyAuth.Enabled(), grpcEH)
 	grpcSrv, grpcHs := grpchandler.NewServer(grpchandler.Handlers{
 		Embed:             grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
 		Logging:           grpchandler.NewLoggingHandler(logger),
@@ -110,6 +116,7 @@ func run() error {
 		Logger:            logger,
 		StreamCanceller:   streams,
 		ReflectionEnabled: conf.GRPCReflection,
+		APIKeyAuthHandler: grpcAK,
 	})
 	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
 	logger.Info("grpc server starting", "addr", grpcAddr)
@@ -157,7 +164,6 @@ func run() error {
 	grpcHs.Shutdown()
 	ready.SetDraining()
 
-	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
 
@@ -165,6 +171,7 @@ func run() error {
 		logger.Info("draining", "delay", conf.Timeouts.Drain)
 		time.Sleep(conf.Timeouts.Drain)
 	}
+	logger.Info("shutting down server")
 
 	streams.Cancel()
 

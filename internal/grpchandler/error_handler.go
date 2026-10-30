@@ -24,6 +24,15 @@ func (h *ErrorHandler) HandleError(ctx context.Context, err error) error {
 		return status.Error(codes.Canceled, "client disconnected")
 	}
 
+	if errors.Is(err, common.ErrAuthFailed) {
+		h.logger.WarnContext(ctx, "unauthenticated", "err", err)
+		return status.Error(codes.Unauthenticated, "authentication failed")
+	}
+	if errors.Is(err, common.ErrMissingAPIKey) {
+		h.logger.WarnContext(ctx, "unauthenticated", "err", err)
+		return status.Error(codes.Unauthenticated, "missing authentication")
+	}
+
 	h.logger.ErrorContext(ctx, "grpc error", "err", err)
 
 	switch {

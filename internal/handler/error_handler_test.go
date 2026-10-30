@@ -92,6 +92,18 @@ func TestHandleError(t *testing.T) {
 			wantMessage: "invalid output",
 		},
 		{
+			name:        "wrong api key",
+			err:         common.ErrAuthFailed,
+			wantStatus:  http.StatusUnauthorized,
+			wantMessage: "authentication failed",
+		},
+		{
+			name:        "missing api key",
+			err:         common.ErrMissingAPIKey,
+			wantStatus:  http.StatusUnauthorized,
+			wantMessage: "api key is missing",
+		},
+		{
 			name:        "unknown error",
 			err:         errors.New("boom"),
 			wantStatus:  http.StatusInternalServerError,
@@ -130,6 +142,17 @@ func TestHandleErrorLogLevel(t *testing.T) {
 		{
 			name:      "client disconnect during upstream call is a warning",
 			err:       fmt.Errorf("%w: %w", common.ErrUpstream, context.Canceled),
+			wantLevel: slog.LevelWarn,
+		},
+		{
+			// Anyone can send a bad key; that must not flood the error log.
+			name:      "wrong api key is a warning",
+			err:       common.ErrAuthFailed,
+			wantLevel: slog.LevelWarn,
+		},
+		{
+			name:      "missing api key is a warning",
+			err:       common.ErrMissingAPIKey,
 			wantLevel: slog.LevelWarn,
 		},
 		{

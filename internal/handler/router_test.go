@@ -11,6 +11,7 @@ import (
 
 	"uuid"
 
+	"github.com/KEBABSELLER6/embeddings/internal/auth"
 	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/KEBABSELLER6/embeddings/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
@@ -44,14 +45,24 @@ func newTestServerWithMetrics(t *testing.T, svc common.EmbeddingService) (*httpt
 func newTestServerFull(t *testing.T, svc common.EmbeddingService) (*httptest.Server, *metrics.Metrics, *Readiness) {
 	t.Helper()
 
+	return newTestServerWithAPIKey(t, svc, "")
+}
+
+// newTestServerWithAPIKey requires apiKey on the embed route, like main does
+// with API_KEY set. An empty apiKey turns auth off.
+func newTestServerWithAPIKey(t *testing.T, svc common.EmbeddingService, apiKey string) (*httptest.Server, *metrics.Metrics, *Readiness) {
+	t.Helper()
+
 	m := metrics.New(prometheus.NewRegistry())
 	ready := NewReadiness()
+	eh := newTestErrorHandler()
 	router := NewRouter(Handlers{
 		Logger:           slog.New(slog.DiscardHandler),
 		MaxBodySize:      testMaxBodySize,
-		EmbeddingHandler: NewEmbeddingHandler(svc, newTestErrorHandler(), testMaxInputs),
+		EmbeddingHandler: NewEmbeddingHandler(svc, eh, testMaxInputs),
 		MetricsHandler:   NewMetricsHandler(m),
 		Readiness:        ready,
+		Auth:             NewAPIKeyAuth(auth.NewAPIKeyService(apiKey), apiKey != "", eh),
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
