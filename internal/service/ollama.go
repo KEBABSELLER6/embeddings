@@ -33,7 +33,6 @@ type OllamaResponse struct {
 
 func (s *OllamaService) Embed(ctx context.Context, input []string) (*common.EmbeddingResponse, error) {
 	d := &OllamaRequest{Model: s.cfg.Model, Input: input}
-
 	b, err := json.Marshal(d)
 	if err != nil {
 		return nil, fmt.Errorf("failed marshal: %w", err)
@@ -70,10 +69,9 @@ func (s *OllamaService) Embed(ctx context.Context, input []string) (*common.Embe
 		return nil, fmt.Errorf("%w: %s", common.ErrInvalidOutput, "output length is malformed")
 	}
 
-	result := &common.EmbeddingResponse{
+	res := &common.EmbeddingResponse{
 		Model:      data.Model,
 		Embeddings: data.Embeddings,
 	}
-
-	return result, nil
+	return res, nil
 }

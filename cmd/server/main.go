@@ -62,9 +62,10 @@ func run() error {
 		"max_body_size", conf.MaxBodySize,
 		"grpc_port", conf.GRPCPort,
 		"metrics_port", conf.MetricsPort,
+		"batch_size", conf.BatchSize,
 	)
 
-	embedder, err := NewEmbedder(conf, cli)
+	embedder, err := NewEmbedder(conf, cli, conf.BatchSize)
 	if err != nil {
 		return fmt.Errorf("create embedder: %w", err)
 	}
