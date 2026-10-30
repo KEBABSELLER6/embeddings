@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.0.0](https://github.com/KEBABSELLER6/embeddings/compare/v0.3.0...v1.0.0) (2026-10-30)
+
+
+### ⚠ BREAKING CHANGES
+
+* move readyz, healtzh to metrics
+
+### Features
+
+* sidecar ([99f94f5](https://github.com/KEBABSELLER6/embeddings/commit/99f94f594fef349b748c748b55252e7a7cfca7eb))
+* static api key auth ([1aa4c65](https://github.com/KEBABSELLER6/embeddings/commit/1aa4c6560772c0f924208441664aa42fa80e95b4))
+
+
+### Bug Fixes
+
+* grpc shutdown ([0299670](https://github.com/KEBABSELLER6/embeddings/commit/0299670204371ef23ed3d33c40c16bc3e3ee7002))
+* http drain ([772f277](https://github.com/KEBABSELLER6/embeddings/commit/772f277af864efbf6e269a5b9474e6ea7f1ad38c))
+
 ## [0.3.0](https://github.com/KEBABSELLER6/embeddings/compare/v0.2.0...v0.3.0) (2026-10-30)
 
 
