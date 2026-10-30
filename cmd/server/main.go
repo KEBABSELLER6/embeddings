@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/KEBABSELLER6/embeddings/internal/auth"
+	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/KEBABSELLER6/embeddings/internal/config"
 	"github.com/KEBABSELLER6/embeddings/internal/grpchandler"
 	"github.com/KEBABSELLER6/embeddings/internal/handler"
@@ -63,6 +65,8 @@ func run() error {
 		"grpc_port", conf.GRPCPort,
 		"metrics_port", conf.MetricsPort,
 		"batch_size", conf.BatchSize,
+		"grpc_reflection", conf.GRPCReflection,
+		"api_key_enabled", conf.APIKeyAuth.Enabled(),
 	)
 
 	embedder, err := NewEmbedder(conf, cli, conf.BatchSize)
@@ -75,16 +79,19 @@ func run() error {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 	)
+	apiKey := auth.NewAPIKeyService(conf.APIKeyAuth.APIKey)
 
 	eh := handler.NewErrorHandler(logger)
+	ak := handler.NewAPIKeyAuth(apiKey, conf.APIKeyAuth.Enabled(), eh)
 	router := handler.NewRouter(handler.Handlers{
 		Logger:           logger,
 		MaxBodySize:      conf.MaxBodySize,
 		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh, conf.MaxInputs),
 		MetricsHandler:   handler.NewMetricsHandler(metr),
+		Auth:             ak,
 	})
 
-	addr := fmt.Sprintf(":%s", conf.Port)
+	addr := net.JoinHostPort(conf.ListenHost, conf.Port)
 	logger.Info("server starting", "addr", addr)
 
 	srv := &http.Server{
@@ -97,20 +104,28 @@ func run() error {
 	}
 
 	grpcEH := grpchandler.NewErrorHandler(logger)
+	streams := grpchandler.NewStreamCanceller()
+	grpcAK := grpchandler.NewAPIKeyAuth(apiKey, conf.APIKeyAuth.Enabled(), grpcEH)
 	grpcSrv, grpcHs := grpchandler.NewServer(grpchandler.Handlers{
-		Embed:          grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
-		Logging:        grpchandler.NewLoggingHandler(logger),
-		Correlation:    grpchandler.NewCorrelationHandler(logger),
-		MaxBodySize:    int(conf.MaxBodySize),
-		MetricsHandler: grpchandler.NewMetricsHandler(metr),
-		Logger:         logger,
+		Embed:             grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
+		Logging:           grpchandler.NewLoggingHandler(logger),
+		Correlation:       grpchandler.NewCorrelationHandler(logger),
+		MaxBodySize:       int(conf.MaxBodySize),
+		MetricsHandler:    grpchandler.NewMetricsHandler(metr),
+		Logger:            logger,
+		StreamCanceller:   streams,
+		ReflectionEnabled: conf.GRPCReflection,
+		APIKeyAuthHandler: grpcAK,
 	})
-	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
+	grpcAddr := net.JoinHostPort(conf.ListenHost, conf.GRPCPort)
 	logger.Info("grpc server starting", "addr", grpcAddr)
 
 	metricsAddr := fmt.Sprintf(":%s", conf.MetricsPort)
 	metricsMux := http.NewServeMux()
+	ready := handler.NewReadiness()
 	metricsMux.Handle("GET /metrics", promhttp.HandlerFor(reg, promhttp.HandlerOpts{}))
+	metricsMux.HandleFunc(common.HealthzPattern, handler.HandleHealthRequest)
+	metricsMux.HandleFunc(common.ReadyzPattern, ready.HandleReadyRequest)
 	metricsSrv := &http.Server{
 		Addr:              metricsAddr,
 		Handler:           metricsMux,
@@ -149,10 +164,18 @@ func run() error {
 	stop()
 
 	grpcHs.Shutdown()
+	ready.SetDraining()
 
-	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
+
+	if runErr == nil && conf.Timeouts.Drain > 0 {
+		logger.Info("draining", "delay", conf.Timeouts.Drain)
+		time.Sleep(conf.Timeouts.Drain)
+	}
+	logger.Info("shutting down server")
+
+	streams.Cancel()
 
 	grpcDone := make(chan struct{})
 	go func() { grpcSrv.GracefulStop(); close(grpcDone) }()

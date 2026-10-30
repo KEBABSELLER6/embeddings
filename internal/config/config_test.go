@@ -25,7 +25,11 @@ var envKeys = []string{
 	"MAX_INPUTS",
 	"UPSTREAM_TIMEOUT",
 	"SHUTDOWN_TIMEOUT",
+	"DRAIN_DELAY",
 	"BATCH_SIZE",
+	"GRPC_REFLECTION",
+	"API_KEY",
+	"LISTEN_HOST",
 }
 
 // setEnv clears every variable Configure reads, then applies env, so a test
@@ -350,6 +354,43 @@ func TestConfigure(t *testing.T) {
 			wantErr: "BATCH_SIZE must not be negative",
 		},
 		{
+			name: "grpc reflection is enabled",
+			env:  ollamaEnv(map[string]string{"GRPC_REFLECTION": "true"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.GRPCReflection = true
+				return c
+			}(),
+		},
+		{
+			name: "grpc reflection is explicitly disabled",
+			env:  ollamaEnv(map[string]string{"GRPC_REFLECTION": "false"}),
+			want: defaultOllamaConfig(defaultLog),
+		},
+		{
+			name: "listen host is set",
+			env:  ollamaEnv(map[string]string{"LISTEN_HOST": "127.0.0.1"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.ListenHost = "127.0.0.1"
+				return c
+			}(),
+		},
+		{
+			name: "api key is set",
+			env:  ollamaEnv(map[string]string{"API_KEY": "s3cret-key"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.APIKeyAuth = APIKeyAuth{APIKey: "s3cret-key"}
+				return c
+			}(),
+		},
+		{
+			name:    "grpc reflection is not a bool",
+			env:     ollamaEnv(map[string]string{"GRPC_REFLECTION": "maybe"}),
+			wantErr: "failed to parse GRPC_REFLECTION",
+		},
+		{
 			name:    "max inputs is not a number",
 			env:     ollamaEnv(map[string]string{"MAX_INPUTS": "lots"}),
 			wantErr: "failed to parse MAX_INPUTS",
@@ -387,17 +428,62 @@ func TestConfigure(t *testing.T) {
 		{
 			name:    "shutdown timeout below upstream timeout",
 			env:     ollamaEnv(map[string]string{"SHUTDOWN_TIMEOUT": "10s"}),
-			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
 		},
 		{
 			name:    "shutdown timeout equal to upstream timeout",
 			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "30s", "SHUTDOWN_TIMEOUT": "30s"}),
-			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
 		},
 		{
 			name:    "raising only the upstream timeout past the default shutdown timeout",
 			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "40s"}),
-			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
+		},
+		{
+			name: "drain delay is set",
+			env:  ollamaEnv(map[string]string{"DRAIN_DELAY": "4s"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.Timeouts.Drain = 4 * time.Second
+				return c
+			}(),
+		},
+		{
+			name: "drain delay of zero is allowed",
+			env:  ollamaEnv(map[string]string{"DRAIN_DELAY": "0s"}),
+			want: defaultOllamaConfig(defaultLog),
+		},
+		{
+			name:    "drain delay is not a duration",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "a bit"}),
+			wantErr: "failed to parse DRAIN_DELAY",
+		},
+		{
+			name:    "drain delay is negative",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "-1s"}),
+			wantErr: "DRAIN_DELAY must be not negative",
+		},
+		{
+			// 5s + the default 30s upstream is exactly the default 35s shutdown.
+			name:    "drain delay plus upstream timeout equal to shutdown timeout",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "5s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
+		},
+		{
+			name:    "drain delay plus upstream timeout past shutdown timeout",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "10s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
+		},
+		{
+			name: "a longer shutdown timeout makes room for the drain delay",
+			env:  ollamaEnv(map[string]string{"DRAIN_DELAY": "10s", "SHUTDOWN_TIMEOUT": "41s"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.Timeouts.Drain = 10 * time.Second
+				c.Timeouts.Shutdown = 41 * time.Second
+				return c
+			}(),
 		},
 		{
 			name:    "body size is not a number",
@@ -537,4 +623,39 @@ func TestConfigure(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
+}
+
+func TestAPIKeyAuthEnabled(t *testing.T) {
+	assert.False(t, APIKeyAuth{}.Enabled(), "no key means auth is off")
+	assert.True(t, APIKeyAuth{APIKey: "s3cret-key"}.Enabled())
+}
+
+func TestConfigureAPIKeyAuth(t *testing.T) {
+	base := map[string]string{
+		"PROVIDER":            "ollama",
+		"OLLAMA_MODEL":        "nomic-embed-text",
+		"OLLAMA_ENDPOINT_URL": "http://localhost:11434/api/embed",
+	}
+
+	t.Run("unset API_KEY turns auth off", func(t *testing.T) {
+		setEnv(t, base)
+
+		c, err := Configure()
+
+		require.NoError(t, err)
+		assert.False(t, c.APIKeyAuth.Enabled())
+	})
+
+	t.Run("set API_KEY turns auth on", func(t *testing.T) {
+		env := map[string]string{"API_KEY": "s3cret-key"}
+		for k, v := range base {
+			env[k] = v
+		}
+		setEnv(t, env)
+
+		c, err := Configure()
+
+		require.NoError(t, err)
+		assert.True(t, c.APIKeyAuth.Enabled())
+	})
 }

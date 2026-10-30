@@ -11,6 +11,7 @@ import (
 
 	"uuid"
 
+	"github.com/KEBABSELLER6/embeddings/internal/auth"
 	"github.com/KEBABSELLER6/embeddings/internal/common"
 	"github.com/KEBABSELLER6/embeddings/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
@@ -35,12 +36,22 @@ func newTestServer(t *testing.T, svc common.EmbeddingService) *httptest.Server {
 func newTestServerWithMetrics(t *testing.T, svc common.EmbeddingService) (*httptest.Server, *metrics.Metrics) {
 	t.Helper()
 
+	return newTestServerWithAPIKey(t, svc, "")
+}
+
+// newTestServerWithAPIKey requires apiKey on the embed route, like main does
+// with API_KEY set. An empty apiKey turns auth off.
+func newTestServerWithAPIKey(t *testing.T, svc common.EmbeddingService, apiKey string) (*httptest.Server, *metrics.Metrics) {
+	t.Helper()
+
 	m := metrics.New(prometheus.NewRegistry())
+	eh := newTestErrorHandler()
 	router := NewRouter(Handlers{
 		Logger:           slog.New(slog.DiscardHandler),
 		MaxBodySize:      testMaxBodySize,
-		EmbeddingHandler: NewEmbeddingHandler(svc, newTestErrorHandler(), testMaxInputs),
+		EmbeddingHandler: NewEmbeddingHandler(svc, eh, testMaxInputs),
 		MetricsHandler:   NewMetricsHandler(m),
+		Auth:             NewAPIKeyAuth(auth.NewAPIKeyService(apiKey), apiKey != "", eh),
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
@@ -89,14 +100,15 @@ func TestRouter(t *testing.T) {
 		Embeddings: [][]float32{{0.5, 0.25}},
 	}
 
-	t.Run("health check", func(t *testing.T) {
+	// Probes are served on the admin port only (see cmd/server), so the API
+	// port can be bound to localhost in a sidecar.
+	t.Run("probes are not on the api router", func(t *testing.T) {
 		srv := newTestServer(t, &fakeEmbeddingService{})
 
-		resp, body := do(t, srv, http.MethodGet, "/healthz", "", nil)
-
-		assert.Equal(t, http.StatusOK, resp.StatusCode)
-		assert.JSONEq(t, `{"status":"ok"}`, string(body))
-		assertGeneratedCorrelationID(t, resp)
+		for _, path := range []string{"/healthz", "/readyz"} {
+			resp, _ := do(t, srv, http.MethodGet, path, "", nil)
+			assert.Equal(t, http.StatusNotFound, resp.StatusCode, path)
+		}
 	})
 
 	t.Run("embed request", func(t *testing.T) {

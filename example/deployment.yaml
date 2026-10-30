@@ -1,0 +1,89 @@
+# Sidecar example: the embeddings server runs next to a placeholder app in the
+# same pod, backed by the Ollama from the dev stack (compose.yaml) on the host.
+#
+# Prerequisites (see README, "Running as a sidecar"):
+#   make dev-up                                  # Ollama on host port 11434
+#   k3d cluster create embeddings
+#   docker build -t embeddings:dev .
+#   k3d image import embeddings:dev -c embeddings
+#   kubectl create secret generic embedder --from-literal=api-key=<key>
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sidecar-poc
+spec:
+  selector:
+    matchLabels:
+      app: sidecar-poc
+  template:
+    metadata:
+      labels:
+        app: sidecar-poc
+    spec:
+      initContainers:
+        - name: embedder
+          image: embeddings:dev
+          imagePullPolicy: IfNotPresent
+          resources:
+            limits:
+              memory: 256Mi
+            requests:
+              memory: 128Mi
+              cpu: 100m
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+            seccompProfile:
+              type: RuntimeDefault
+          restartPolicy: Always
+          env:
+            - name: PROVIDER
+              value: ollama
+            # k3d resolves host.k3d.internal to the host, where compose
+            # publishes Ollama.
+            - name: OLLAMA_ENDPOINT_URL
+              value: http://host.k3d.internal:11434/api/embed
+            - name: OLLAMA_MODEL
+              value: nomic-embed-text
+            - name: API_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: api-key
+                  name: embedder
+            - name: LISTEN_HOST
+              value: "127.0.0.1"
+            - name: DRAIN_DELAY
+              value: 0s
+            - name: UPSTREAM_TIMEOUT
+              value: 10s
+            - name: SHUTDOWN_TIMEOUT
+              value: 15s
+            - name: GOMEMLIMIT
+              value: 200MiB
+          ports:
+            - name: admin
+              containerPort: 9090
+          startupProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+            periodSeconds: 1
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: admin
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: admin
+      containers:
+        - name: app
+          image: curlimages/curl
+          # PID 1 ignores SIGTERM unless it handles it, and a bare sleep would
+          # hold the pod for the whole grace period before the sidecar stops.
+          command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]

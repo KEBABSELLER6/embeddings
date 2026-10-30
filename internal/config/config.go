@@ -19,23 +19,32 @@ const LogFormatJSON LogFormat = "json"
 const LogFormatText LogFormat = "text"
 
 type Config struct {
-	Port        string
-	MaxBodySize int64
-	Provider    Provider
-	Ollama      *OllamaConfig
-	OpenAI      *OpenAIConfig
-	Log         LogConfig
-	MaxInputs   int
-	Timeouts    TimeoutConfig
-	GRPCPort    string
-	MetricsPort string
-	BatchSize   int
+	Port           string
+	MaxBodySize    int64
+	Provider       Provider
+	Ollama         *OllamaConfig
+	OpenAI         *OpenAIConfig
+	Log            LogConfig
+	MaxInputs      int
+	Timeouts       TimeoutConfig
+	GRPCPort       string
+	MetricsPort    string
+	BatchSize      int
+	GRPCReflection bool
+	APIKeyAuth     APIKeyAuth
+	ListenHost     string
 }
 
 type OllamaConfig struct {
 	Model    string
 	Endpoint string
 }
+
+type APIKeyAuth struct {
+	APIKey string
+}
+
+func (a APIKeyAuth) Enabled() bool { return a.APIKey != "" }
 
 type OpenAIConfig struct {
 	APIKey  string
@@ -49,10 +58,23 @@ type LogConfig struct {
 }
 
 type TimeoutConfig struct {
-	Upstream, Shutdown time.Duration
+	Upstream, Shutdown, Drain time.Duration
 }
 
 func positiveDurationEnv(key string, def time.Duration) (time.Duration, error) {
+	parsed, err := durationEnv(key, def)
+	if err != nil {
+		return 0, err
+	}
+
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be positive duration", key)
+	}
+
+	return parsed, nil
+}
+
+func durationEnv(key string, def time.Duration) (time.Duration, error) {
 	t := os.Getenv(key)
 	if t == "" {
 		return def, nil
@@ -61,10 +83,6 @@ func positiveDurationEnv(key string, def time.Duration) (time.Duration, error) {
 	parsed, err := time.ParseDuration(t)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse %s: %w", key, err)
-	}
-
-	if parsed <= 0 {
-		return 0, fmt.Errorf("%s must be positive duration", key)
 	}
 
 	return parsed, nil
@@ -160,8 +178,15 @@ func Configure() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if upstreamTimeout >= shutdownTimeout {
-		return nil, fmt.Errorf("%s must be larger than %s", "SHUTDOWN_TIMEOUT", "UPSTREAM_TIMEOUT")
+	drainDelay, err := durationEnv("DRAIN_DELAY", 0)
+	if err != nil {
+		return nil, err
+	}
+	if drainDelay < 0 {
+		return nil, fmt.Errorf("%s must be not negative duration", "DRAIN_DELAY")
+	}
+	if drainDelay+upstreamTimeout >= shutdownTimeout {
+		return nil, fmt.Errorf("SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT")
 	}
 	batchSize, err := intEnv("BATCH_SIZE", 0)
 	if err != nil {
@@ -169,6 +194,16 @@ func Configure() (*Config, error) {
 	}
 	if batchSize < 0 {
 		return nil, fmt.Errorf("%s must not be negative", "BATCH_SIZE")
+	}
+	refl := os.Getenv("GRPC_REFLECTION")
+	var grpcRef bool
+	if refl == "" {
+		grpcRef = false
+	} else {
+		grpcRef, err = strconv.ParseBool(refl)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse GRPC_REFLECTION %w", err)
+		}
 	}
 
 	prvdr := os.Getenv("PROVIDER")
@@ -247,18 +282,24 @@ func Configure() (*Config, error) {
 		return nil, fmt.Errorf("unsupported LOG_FORMAT: %q", logFormat)
 	}
 
+	apiKey := os.Getenv("API_KEY")
+	listenHost := os.Getenv("LISTEN_HOST")
+
 	config := &Config{
-		Port:        port,
-		MaxBodySize: maxBodySize,
-		Provider:    provider,
-		Ollama:      ollamaConfig,
-		Log:         LogConfig{Format: format, Level: lvl},
-		MaxInputs:   int(maxInputs),
-		Timeouts:    TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout},
-		GRPCPort:    grpcPort,
-		MetricsPort: metricsPort,
-		BatchSize:   int(batchSize),
-		OpenAI:      openaiConfig,
+		Port:           port,
+		MaxBodySize:    maxBodySize,
+		Provider:       provider,
+		Ollama:         ollamaConfig,
+		Log:            LogConfig{Format: format, Level: lvl},
+		MaxInputs:      int(maxInputs),
+		Timeouts:       TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout, Drain: drainDelay},
+		GRPCPort:       grpcPort,
+		MetricsPort:    metricsPort,
+		BatchSize:      int(batchSize),
+		OpenAI:         openaiConfig,
+		GRPCReflection: grpcRef,
+		APIKeyAuth:     APIKeyAuth{APIKey: apiKey},
+		ListenHost:     listenHost,
 	}
 
 	return config, nil

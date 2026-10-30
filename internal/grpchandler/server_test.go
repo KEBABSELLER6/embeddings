@@ -1,6 +1,7 @@
 package grpchandler
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -57,17 +58,28 @@ func TestServerRejectsOversizedRequest(t *testing.T) {
 	assert.Zero(t, svc.calls)
 }
 
-func TestServerRegistersReflection(t *testing.T) {
-	srv, _ := NewServer(Handlers{
-		Embed:          NewEmbeddingHandler(&fakeEmbeddingService{}, NewErrorHandler(nil), testMaxInputs),
-		Logging:        NewLoggingHandler(nil),
-		Correlation:    NewCorrelationHandler(nil),
-		MetricsHandler: NewMetricsHandler(nil),
-		MaxBodySize:    testMaxBodySize,
-	})
+func TestServerRegistersServices(t *testing.T) {
+	for _, reflection := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reflection %t", reflection), func(t *testing.T) {
+			srv, _ := NewServer(Handlers{
+				Embed:             NewEmbeddingHandler(&fakeEmbeddingService{}, NewErrorHandler(nil), testMaxInputs),
+				Logging:           NewLoggingHandler(nil),
+				Correlation:       NewCorrelationHandler(nil),
+				MetricsHandler:    NewMetricsHandler(nil),
+				MaxBodySize:       testMaxBodySize,
+				StreamCanceller:   NewStreamCanceller(),
+				ReflectionEnabled: reflection,
+				APIKeyAuthHandler: NewAPIKeyAuth(nil, false, NewErrorHandler(nil)),
+			})
 
-	info := srv.GetServiceInfo()
-	assert.Contains(t, info, "embeddings.v1.EmbeddingService")
-	assert.Contains(t, info, "grpc.reflection.v1.ServerReflection")
-	assert.Contains(t, info, "grpc.health.v1.Health")
+			info := srv.GetServiceInfo()
+			assert.Contains(t, info, "embeddings.v1.EmbeddingService")
+			assert.Contains(t, info, "grpc.health.v1.Health")
+			if reflection {
+				assert.Contains(t, info, "grpc.reflection.v1.ServerReflection")
+			} else {
+				assert.NotContains(t, info, "grpc.reflection.v1.ServerReflection")
+			}
+		})
+	}
 }
