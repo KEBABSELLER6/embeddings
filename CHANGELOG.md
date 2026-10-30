@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.3.0](https://github.com/KEBABSELLER6/embeddings/compare/v0.2.0...v0.3.0) (2026-10-30)
+
+
+### Features
+
+* add openai provider ([69b7d08](https://github.com/KEBABSELLER6/embeddings/commit/69b7d0891442b263c727160a99008c1965b5e561))
+* enable batching ([994dc77](https://github.com/KEBABSELLER6/embeddings/commit/994dc7742747eabde806a8b3144b12b3909077af))
+* openai provider, batching ([02dbe24](https://github.com/KEBABSELLER6/embeddings/commit/02dbe24362ce0a9ceeba0d30720fd7aa4ea09ae0))
+
+
+### Bug Fixes
+
+* couple of leftover issues ([e0480f5](https://github.com/KEBABSELLER6/embeddings/commit/e0480f5989aa5def44050b9452c231b8dab9ce31))
+
 ## [0.2.0](https://github.com/KEBABSELLER6/embeddings/compare/v0.1.0...v0.2.0) (2026-10-29)
 
 
