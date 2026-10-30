@@ -16,7 +16,7 @@ type OpenAIService struct {
 	cfg config.OpenAIConfig
 }
 
-func NewOpenAIService(cfg config.OpenAIConfig, cli *http.Client) *OpenAIService {
+func NewOpenAIService(cli *http.Client, cfg config.OpenAIConfig) *OpenAIService {
 	client := openai.NewClient(
 		option.WithAPIKey(cfg.APIKey),
 		option.WithBaseURL(cfg.BaseURL),

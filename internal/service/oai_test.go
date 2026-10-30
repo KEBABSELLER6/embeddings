@@ -28,7 +28,7 @@ func newTestOpenAIService(t *testing.T, h http.HandlerFunc, timeout time.Duratio
 	t.Cleanup(srv.Close)
 
 	cfg := config.OpenAIConfig{APIKey: testAPIKey, Model: testModel, BaseURL: srv.URL + "/v1"}
-	return NewOpenAIService(cfg, &http.Client{Timeout: timeout})
+	return NewOpenAIService(&http.Client{Timeout: timeout}, cfg)
 }
 
 // respondAPI is respondJSON with the Content-Type header the OpenAI SDK
@@ -250,7 +250,7 @@ func TestOpenAIServiceEmbed(t *testing.T) {
 		baseURL := srv.URL + "/v1"
 		srv.Close()
 
-		svc := NewOpenAIService(config.OpenAIConfig{APIKey: testAPIKey, Model: testModel, BaseURL: baseURL}, &http.Client{Timeout: time.Second})
+		svc := NewOpenAIService(&http.Client{Timeout: time.Second}, config.OpenAIConfig{APIKey: testAPIKey, Model: testModel, BaseURL: baseURL})
 
 		_, err := svc.Embed(context.Background(), []string{"a"})
 

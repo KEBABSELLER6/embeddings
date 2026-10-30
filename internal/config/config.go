@@ -115,10 +115,10 @@ func portEnv(key string, def string) (string, error) {
 	return strconv.Itoa(int(p)), nil
 }
 
-func urlEnv(key string) (string, error) {
+func urlEnv(key string, prvd Provider) (string, error) {
 	endpoint := os.Getenv(key)
 	if endpoint == "" {
-		return "", fmt.Errorf("missing %s for ollama provider", key)
+		return "", fmt.Errorf("missing %s for %s provider", key, string(prvd))
 	}
 	u, err := url.Parse(endpoint)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
@@ -186,7 +186,7 @@ func Configure() (*Config, error) {
 	case string(ProviderOllama):
 		provider = ProviderOllama
 
-		endpoint, err := urlEnv("OLLAMA_ENDPOINT_URL")
+		endpoint, err := urlEnv("OLLAMA_ENDPOINT_URL", ProviderOllama)
 		if err != nil {
 			return nil, err
 		}
@@ -212,7 +212,7 @@ func Configure() (*Config, error) {
 			return nil, errors.New("missing OPENAI_MODEL for openai provider")
 		}
 
-		baseUrl, err := urlEnv("OPENAI_BASE_URL")
+		baseURL, err := urlEnv("OPENAI_BASE_URL", ProviderOpenAI)
 		if err != nil {
 			return nil, err
 		}
@@ -220,7 +220,7 @@ func Configure() (*Config, error) {
 		openaiConfig = &OpenAIConfig{
 			Model:   model,
 			APIKey:  apiKey,
-			BaseURL: baseUrl,
+			BaseURL: baseURL,
 		}
 	default:
 		return nil, fmt.Errorf("unsupported PROVIDER %q", prvdr)

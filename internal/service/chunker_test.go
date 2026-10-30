@@ -103,6 +103,9 @@ func (f *fakeEmbedder) maxConcurrent() int {
 	return f.maxInFlight
 }
 
+// testUpstreamTimeout is long enough that only the deadline test ever hits it.
+const testUpstreamTimeout = time.Minute
+
 // numberedInputs returns "0", "1", ... "n-1".
 func numberedInputs(n int) []string {
 	in := make([]string, n)
@@ -143,7 +146,7 @@ func TestChunkerEmbed(t *testing.T) {
 				return time.Duration(max(0, 30-first)) * time.Millisecond
 			}}
 
-			got, err := NewChunker(fake, tt.batchSize).Embed(context.Background(), numberedInputs(tt.inputs))
+			got, err := NewChunker(fake, tt.batchSize, testUpstreamTimeout).Embed(context.Background(), numberedInputs(tt.inputs))
 
 			require.NoError(t, err)
 			assert.Equal(t, numberedEmbeddings(tt.inputs), got.Embeddings)
@@ -160,11 +163,12 @@ func TestChunkerEmbed(t *testing.T) {
 			return echo(input)
 		}}
 
-		got, err := NewChunker(fake, 4).Embed(context.Background(), numberedInputs(18))
+		got, err := NewChunker(fake, 4, testUpstreamTimeout).Embed(context.Background(), numberedInputs(18))
 
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrUpstream)
 		assert.ErrorContains(t, err, "boom")
+		assert.ErrorContains(t, err, "chunk [8:12]")
 		assert.Nil(t, got)
 	})
 
@@ -176,7 +180,7 @@ func TestChunkerEmbed(t *testing.T) {
 			return echo(input)
 		}}
 
-		got, err := NewChunker(fake, 4).Embed(context.Background(), numberedInputs(18))
+		got, err := NewChunker(fake, 4, testUpstreamTimeout).Embed(context.Background(), numberedInputs(18))
 
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrInvalidOutput)
@@ -201,7 +205,7 @@ func TestChunkerEmbed(t *testing.T) {
 		}}
 
 		// Four chunks, all within the concurrency limit, so all start at once.
-		_, err := NewChunker(fake, 1).Embed(context.Background(), numberedInputs(4))
+		_, err := NewChunker(fake, 1, testUpstreamTimeout).Embed(context.Background(), numberedInputs(4))
 
 		require.Error(t, err)
 		assert.ErrorIs(t, err, common.ErrUpstream)
@@ -225,22 +229,36 @@ func TestChunkerEmbed(t *testing.T) {
 		time.AfterFunc(50*time.Millisecond, cancel)
 
 		// Four chunks, all within the concurrency limit, so all start at once.
-		_, err := NewChunker(fake, 2).Embed(ctx, numberedInputs(8))
+		_, err := NewChunker(fake, 2, testUpstreamTimeout).Embed(ctx, numberedInputs(8))
 
 		require.Error(t, err)
 		assert.ErrorIs(t, err, context.Canceled)
 		assert.EqualValues(t, 4, cancelled.Load())
 	})
 
+	t.Run("the upstream timeout covers all chunks, not each one", func(t *testing.T) {
+		// Every chunk fits the timeout on its own, but five rounds of them do not.
+		fake := &fakeEmbedder{delay: func(int) time.Duration { return 30 * time.Millisecond }}
+		n := maxConcurrentChunks * 5
+
+		start := time.Now()
+		got, err := NewChunker(fake, 1, 50*time.Millisecond).Embed(context.Background(), numberedInputs(n))
+
+		require.Error(t, err)
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.Nil(t, got)
+		assert.Less(t, time.Since(start), 140*time.Millisecond, "should stop at the deadline, not run every round")
+	})
+
 	t.Run("concurrent chunks are capped at the limit", func(t *testing.T) {
 		fake := &fakeEmbedder{delay: func(int) time.Duration { return 20 * time.Millisecond }}
-		n := goroutineSize * 5
+		n := maxConcurrentChunks * 5
 
-		got, err := NewChunker(fake, 1).Embed(context.Background(), numberedInputs(n))
+		got, err := NewChunker(fake, 1, testUpstreamTimeout).Embed(context.Background(), numberedInputs(n))
 
 		require.NoError(t, err)
 		assert.Equal(t, numberedEmbeddings(n), got.Embeddings)
-		assert.LessOrEqual(t, fake.maxConcurrent(), goroutineSize)
+		assert.LessOrEqual(t, fake.maxConcurrent(), maxConcurrentChunks)
 		assert.Greater(t, fake.maxConcurrent(), 1, "chunks should run in parallel")
 	})
 
@@ -264,7 +282,7 @@ func TestChunkerEmbed(t *testing.T) {
 			_, _ = w.Write(out)
 		}, time.Second)
 
-		got, err := NewChunker(svc, 4).Embed(context.Background(), numberedInputs(10))
+		got, err := NewChunker(svc, 4, testUpstreamTimeout).Embed(context.Background(), numberedInputs(10))
 
 		require.NoError(t, err)
 		assert.Equal(t, numberedEmbeddings(10), got.Embeddings)
