@@ -50,10 +50,23 @@ type LogConfig struct {
 }
 
 type TimeoutConfig struct {
-	Upstream, Shutdown time.Duration
+	Upstream, Shutdown, Drain time.Duration
 }
 
 func positiveDurationEnv(key string, def time.Duration) (time.Duration, error) {
+	parsed, err := durationEnv(key, def)
+	if err != nil {
+		return 0, err
+	}
+
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be positive duration", key)
+	}
+
+	return parsed, nil
+}
+
+func durationEnv(key string, def time.Duration) (time.Duration, error) {
 	t := os.Getenv(key)
 	if t == "" {
 		return def, nil
@@ -62,10 +75,6 @@ func positiveDurationEnv(key string, def time.Duration) (time.Duration, error) {
 	parsed, err := time.ParseDuration(t)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse %s: %w", key, err)
-	}
-
-	if parsed <= 0 {
-		return 0, fmt.Errorf("%s must be positive duration", key)
 	}
 
 	return parsed, nil
@@ -161,8 +170,15 @@ func Configure() (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	if upstreamTimeout >= shutdownTimeout {
-		return nil, fmt.Errorf("%s must be larger than %s", "SHUTDOWN_TIMEOUT", "UPSTREAM_TIMEOUT")
+	drainDelay, err := durationEnv("DRAIN_DELAY", 0)
+	if err != nil {
+		return nil, err
+	}
+	if drainDelay < 0 {
+		return nil, fmt.Errorf("%s must be not negative duration", "DRAIN_DELAY")
+	}
+	if drainDelay+upstreamTimeout >= shutdownTimeout {
+		return nil, fmt.Errorf("SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT")
 	}
 	batchSize, err := intEnv("BATCH_SIZE", 0)
 	if err != nil {
@@ -265,7 +281,7 @@ func Configure() (*Config, error) {
 		Ollama:         ollamaConfig,
 		Log:            LogConfig{Format: format, Level: lvl},
 		MaxInputs:      int(maxInputs),
-		Timeouts:       TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout},
+		Timeouts:       TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout, Drain: drainDelay},
 		GRPCPort:       grpcPort,
 		MetricsPort:    metricsPort,
 		BatchSize:      int(batchSize),

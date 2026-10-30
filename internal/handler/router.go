@@ -12,12 +12,14 @@ type Handlers struct {
 	EmbeddingHandler *EmbeddingHandler
 	Logger           *slog.Logger
 	MetricsHandler   *MetricsHandler
+	Readiness        *Readiness
 }
 
 func NewRouter(h Handlers) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc(common.HealthzPattern, HandleHealthRequest)
+	mux.HandleFunc(common.ReadyzPattern, h.Readiness.HandleReadyRequest)
 	mux.HandleFunc("POST /api/v1/embed", h.EmbeddingHandler.HandleEmbeddingRequest)
 
 	logging := NewLoggingHandler(h.Logger)

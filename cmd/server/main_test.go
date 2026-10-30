@@ -39,7 +39,11 @@ func TestRunStartupFailure(t *testing.T) {
 	t.Setenv("OLLAMA_MODEL", "test-model")
 	t.Setenv("LOG_LEVEL", "error")
 	t.Setenv("UPSTREAM_TIMEOUT", "1s")
-	t.Setenv("SHUTDOWN_TIMEOUT", "2s")
+	// Nothing routes traffic to a server that never started, so a startup
+	// failure must skip the drain delay; if it didn't, run would outlast the
+	// 10s wait below.
+	t.Setenv("DRAIN_DELAY", "20s")
+	t.Setenv("SHUTDOWN_TIMEOUT", "25s")
 
 	done := make(chan error, 1)
 	go func() { done <- run() }()

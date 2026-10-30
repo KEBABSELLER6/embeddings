@@ -25,6 +25,7 @@ var envKeys = []string{
 	"MAX_INPUTS",
 	"UPSTREAM_TIMEOUT",
 	"SHUTDOWN_TIMEOUT",
+	"DRAIN_DELAY",
 	"BATCH_SIZE",
 	"GRPC_REFLECTION",
 }
@@ -407,17 +408,62 @@ func TestConfigure(t *testing.T) {
 		{
 			name:    "shutdown timeout below upstream timeout",
 			env:     ollamaEnv(map[string]string{"SHUTDOWN_TIMEOUT": "10s"}),
-			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
 		},
 		{
 			name:    "shutdown timeout equal to upstream timeout",
 			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "30s", "SHUTDOWN_TIMEOUT": "30s"}),
-			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
 		},
 		{
 			name:    "raising only the upstream timeout past the default shutdown timeout",
 			env:     ollamaEnv(map[string]string{"UPSTREAM_TIMEOUT": "40s"}),
-			wantErr: "SHUTDOWN_TIMEOUT must be larger than UPSTREAM_TIMEOUT",
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
+		},
+		{
+			name: "drain delay is set",
+			env:  ollamaEnv(map[string]string{"DRAIN_DELAY": "4s"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.Timeouts.Drain = 4 * time.Second
+				return c
+			}(),
+		},
+		{
+			name: "drain delay of zero is allowed",
+			env:  ollamaEnv(map[string]string{"DRAIN_DELAY": "0s"}),
+			want: defaultOllamaConfig(defaultLog),
+		},
+		{
+			name:    "drain delay is not a duration",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "a bit"}),
+			wantErr: "failed to parse DRAIN_DELAY",
+		},
+		{
+			name:    "drain delay is negative",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "-1s"}),
+			wantErr: "DRAIN_DELAY must be not negative",
+		},
+		{
+			// 5s + the default 30s upstream is exactly the default 35s shutdown.
+			name:    "drain delay plus upstream timeout equal to shutdown timeout",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "5s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
+		},
+		{
+			name:    "drain delay plus upstream timeout past shutdown timeout",
+			env:     ollamaEnv(map[string]string{"DRAIN_DELAY": "10s"}),
+			wantErr: "SHUTDOWN_TIMEOUT must be larger than DRAIN_DELAY + UPSTREAM_TIMEOUT",
+		},
+		{
+			name: "a longer shutdown timeout makes room for the drain delay",
+			env:  ollamaEnv(map[string]string{"DRAIN_DELAY": "10s", "SHUTDOWN_TIMEOUT": "41s"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.Timeouts.Drain = 10 * time.Second
+				c.Timeouts.Shutdown = 41 * time.Second
+				return c
+			}(),
 		},
 		{
 			name:    "body size is not a number",

@@ -78,11 +78,13 @@ func run() error {
 	)
 
 	eh := handler.NewErrorHandler(logger)
+	ready := handler.NewReadiness()
 	router := handler.NewRouter(handler.Handlers{
 		Logger:           logger,
 		MaxBodySize:      conf.MaxBodySize,
 		EmbeddingHandler: handler.NewEmbeddingHandler(embedder, eh, conf.MaxInputs),
 		MetricsHandler:   handler.NewMetricsHandler(metr),
+		Readiness:        ready,
 	})
 
 	addr := fmt.Sprintf(":%s", conf.Port)
@@ -153,11 +155,18 @@ func run() error {
 	stop()
 
 	grpcHs.Shutdown()
-	streams.Cancel()
+	ready.SetDraining()
 
 	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
 	defer cancel()
+
+	if runErr == nil && conf.Timeouts.Drain > 0 {
+		logger.Info("draining", "delay", conf.Timeouts.Drain)
+		time.Sleep(conf.Timeouts.Drain)
+	}
+
+	streams.Cancel()
 
 	grpcDone := make(chan struct{})
 	go func() { grpcSrv.GracefulStop(); close(grpcDone) }()

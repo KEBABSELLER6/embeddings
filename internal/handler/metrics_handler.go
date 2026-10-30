@@ -23,7 +23,7 @@ func (h *MetricsHandler) Metrics(next http.Handler) http.HandlerFunc {
 		rw := &ResponseWriter{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(rw, r)
 		route := r.Pattern
-		if route == common.HealthzPattern {
+		if route == common.HealthzPattern || route == common.ReadyzPattern {
 			return
 		}
 		if route == "" {

@@ -35,16 +35,27 @@ func newTestServer(t *testing.T, svc common.EmbeddingService) *httptest.Server {
 func newTestServerWithMetrics(t *testing.T, svc common.EmbeddingService) (*httptest.Server, *metrics.Metrics) {
 	t.Helper()
 
+	srv, m, _ := newTestServerFull(t, svc)
+	return srv, m
+}
+
+// newTestServerFull also returns the readiness state, so a test can start
+// draining.
+func newTestServerFull(t *testing.T, svc common.EmbeddingService) (*httptest.Server, *metrics.Metrics, *Readiness) {
+	t.Helper()
+
 	m := metrics.New(prometheus.NewRegistry())
+	ready := NewReadiness()
 	router := NewRouter(Handlers{
 		Logger:           slog.New(slog.DiscardHandler),
 		MaxBodySize:      testMaxBodySize,
 		EmbeddingHandler: NewEmbeddingHandler(svc, newTestErrorHandler(), testMaxInputs),
 		MetricsHandler:   NewMetricsHandler(m),
+		Readiness:        ready,
 	})
 	srv := httptest.NewServer(router)
 	t.Cleanup(srv.Close)
-	return srv, m
+	return srv, m, ready
 }
 
 func do(t *testing.T, srv *httptest.Server, method, path, body string, header http.Header) (*http.Response, []byte) {
@@ -97,6 +108,30 @@ func TestRouter(t *testing.T) {
 		assert.Equal(t, http.StatusOK, resp.StatusCode)
 		assert.JSONEq(t, `{"status":"ok"}`, string(body))
 		assertGeneratedCorrelationID(t, resp)
+	})
+
+	t.Run("readiness check", func(t *testing.T) {
+		srv := newTestServer(t, &fakeEmbeddingService{})
+
+		resp, body := do(t, srv, http.MethodGet, "/readyz", "", nil)
+
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.JSONEq(t, `{"status":"ok"}`, string(body))
+		assertGeneratedCorrelationID(t, resp)
+	})
+
+	t.Run("draining fails readiness but not liveness", func(t *testing.T) {
+		srv, _, ready := newTestServerFull(t, &fakeEmbeddingService{})
+
+		ready.SetDraining()
+
+		resp, body := do(t, srv, http.MethodGet, "/readyz", "", nil)
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+		assert.JSONEq(t, `{"status":"down"}`, string(body))
+
+		resp, body = do(t, srv, http.MethodGet, "/healthz", "", nil)
+		assert.Equal(t, http.StatusOK, resp.StatusCode)
+		assert.JSONEq(t, `{"status":"ok"}`, string(body))
 	})
 
 	t.Run("embed request", func(t *testing.T) {

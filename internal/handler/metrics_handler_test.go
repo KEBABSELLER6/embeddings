@@ -110,22 +110,37 @@ func TestMetricsAccumulates(t *testing.T) {
 	assert.Equal(t, uint64(3), observationCount(t, m, "http", "POST /api/v1/embed"))
 }
 
-// Probes hit /healthz every few seconds and would drown out real traffic.
-func TestMetricsSkipsHealthRequests(t *testing.T) {
-	srv, m := newTestServerWithMetrics(t, &fakeEmbeddingService{})
+// Probes hit /healthz and /readyz every few seconds and would drown out real
+// traffic.
+func TestMetricsSkipsProbeRequests(t *testing.T) {
+	for _, path := range []string{"/healthz", "/readyz"} {
+		t.Run(path, func(t *testing.T) {
+			srv, m := newTestServerWithMetrics(t, &fakeEmbeddingService{})
 
-	resp, _ := do(t, srv, http.MethodGet, "/healthz", "", nil)
-	assert.Equal(t, http.StatusOK, resp.StatusCode)
+			resp, _ := do(t, srv, http.MethodGet, path, "", nil)
+			assert.Equal(t, http.StatusOK, resp.StatusCode)
 
-	assert.Zero(t, testutil.CollectAndCount(m.Requests))
-	assert.Zero(t, testutil.CollectAndCount(m.Duration))
+			assert.Zero(t, testutil.CollectAndCount(m.Requests))
+			assert.Zero(t, testutil.CollectAndCount(m.Duration))
 
-	// Only the exact health route is skipped; a wrong method is still counted.
-	resp, _ = do(t, srv, http.MethodPut, "/healthz", "", nil)
-	assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
+			// Only the exact probe route is skipped; a wrong method is still counted.
+			resp, _ = do(t, srv, http.MethodPut, path, "", nil)
+			assert.Equal(t, http.StatusMethodNotAllowed, resp.StatusCode)
 
-	assert.Equal(t, float64(1), testutil.ToFloat64(m.Requests.WithLabelValues("http", "unmatched", "405")))
-	assert.Equal(t, 1, testutil.CollectAndCount(m.Requests))
+			assert.Equal(t, float64(1), testutil.ToFloat64(m.Requests.WithLabelValues("http", "unmatched", "405")))
+			assert.Equal(t, 1, testutil.CollectAndCount(m.Requests))
+		})
+	}
+
+	t.Run("a draining /readyz is skipped too", func(t *testing.T) {
+		srv, m, ready := newTestServerFull(t, &fakeEmbeddingService{})
+		ready.SetDraining()
+
+		resp, _ := do(t, srv, http.MethodGet, "/readyz", "", nil)
+		assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
+
+		assert.Zero(t, testutil.CollectAndCount(m.Requests))
+	})
 }
 
 // Unknown methods and paths are client-controlled, so they must all collapse
