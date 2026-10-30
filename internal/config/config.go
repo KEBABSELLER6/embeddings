@@ -14,6 +14,7 @@ type Provider string
 type LogFormat string
 
 const ProviderOllama Provider = "ollama"
+const ProviderOpenAI Provider = "openai"
 const LogFormatJSON LogFormat = "json"
 const LogFormatText LogFormat = "text"
 
@@ -22,6 +23,7 @@ type Config struct {
 	MaxBodySize int64
 	Provider    Provider
 	Ollama      *OllamaConfig
+	OpenAI      *OpenAIConfig
 	Log         LogConfig
 	MaxInputs   int
 	Timeouts    TimeoutConfig
@@ -33,6 +35,12 @@ type Config struct {
 type OllamaConfig struct {
 	Model    string
 	Endpoint string
+}
+
+type OpenAIConfig struct {
+	APIKey  string
+	Model   string
+	BaseURL string
 }
 
 type LogConfig struct {
@@ -107,6 +115,18 @@ func portEnv(key string, def string) (string, error) {
 	return strconv.Itoa(int(p)), nil
 }
 
+func urlEnv(key string) (string, error) {
+	endpoint := os.Getenv(key)
+	if endpoint == "" {
+		return "", fmt.Errorf("missing %s for ollama provider", key)
+	}
+	u, err := url.Parse(endpoint)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return "", fmt.Errorf("%s must be an absolute http(s) URL, got %q", key, endpoint)
+	}
+	return endpoint, nil
+}
+
 func Configure() (*Config, error) {
 	port, err := portEnv("PORT", "8080")
 	if err != nil {
@@ -159,19 +179,16 @@ func Configure() (*Config, error) {
 	var (
 		provider     Provider
 		ollamaConfig *OllamaConfig
+		openaiConfig *OpenAIConfig
 	)
 
 	switch prvdr {
 	case string(ProviderOllama):
 		provider = ProviderOllama
 
-		endpoint := os.Getenv("OLLAMA_ENDPOINT_URL")
-		if endpoint == "" {
-			return nil, errors.New("missing OLLAMA_ENDPOINT_URL for ollama provider")
-		}
-		u, err := url.Parse(endpoint)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-			return nil, fmt.Errorf("OLLAMA_ENDPOINT_URL must be an absolute http(s) URL, got %q", endpoint)
+		endpoint, err := urlEnv("OLLAMA_ENDPOINT_URL")
+		if err != nil {
+			return nil, err
 		}
 
 		model := os.Getenv("OLLAMA_MODEL")
@@ -181,6 +198,29 @@ func Configure() (*Config, error) {
 		ollamaConfig = &OllamaConfig{
 			Model:    model,
 			Endpoint: endpoint,
+		}
+	case string(ProviderOpenAI):
+		provider = ProviderOpenAI
+
+		apiKey := os.Getenv("OPENAI_API_KEY")
+		if apiKey == "" {
+			return nil, errors.New("missing OPENAI_API_KEY for openai provider")
+		}
+
+		model := os.Getenv("OPENAI_MODEL")
+		if model == "" {
+			return nil, errors.New("missing OPENAI_MODEL for openai provider")
+		}
+
+		baseUrl, err := urlEnv("OPENAI_BASE_URL")
+		if err != nil {
+			return nil, err
+		}
+
+		openaiConfig = &OpenAIConfig{
+			Model:   model,
+			APIKey:  apiKey,
+			BaseURL: baseUrl,
 		}
 	default:
 		return nil, fmt.Errorf("unsupported PROVIDER %q", prvdr)
@@ -218,6 +258,7 @@ func Configure() (*Config, error) {
 		GRPCPort:    grpcPort,
 		MetricsPort: metricsPort,
 		BatchSize:   int(batchSize),
+		OpenAI:      openaiConfig,
 	}
 
 	return config, nil

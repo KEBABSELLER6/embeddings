@@ -17,6 +17,9 @@ var envKeys = []string{
 	"PROVIDER",
 	"OLLAMA_MODEL",
 	"OLLAMA_ENDPOINT_URL",
+	"OPENAI_API_KEY",
+	"OPENAI_MODEL",
+	"OPENAI_BASE_URL",
 	"LOG_LEVEL",
 	"LOG_FORMAT",
 	"MAX_INPUTS",
@@ -50,6 +53,19 @@ func TestConfigure(t *testing.T) {
 		return env
 	}
 
+	openAIEnv := func(overrides map[string]string) map[string]string {
+		env := map[string]string{
+			"PROVIDER":        "openai",
+			"OPENAI_API_KEY":  "sk-test",
+			"OPENAI_MODEL":    "text-embedding-3-small",
+			"OPENAI_BASE_URL": "https://api.openai.com/v1",
+		}
+		for k, v := range overrides {
+			env[k] = v
+		}
+		return env
+	}
+
 	defaultLog := LogConfig{Level: slog.LevelInfo, Format: LogFormatText}
 	defaultTimeouts := TimeoutConfig{Upstream: 30 * time.Second, Shutdown: 35 * time.Second}
 
@@ -69,6 +85,25 @@ func TestConfigure(t *testing.T) {
 			MaxInputs: 2048,
 			Timeouts:  defaultTimeouts,
 			BatchSize: 0,
+		}
+	}
+
+	// defaultOpenAIConfig is what openAIEnv(nil) produces.
+	defaultOpenAIConfig := func() *Config {
+		return &Config{
+			Port:        "8080",
+			GRPCPort:    "50051",
+			MetricsPort: "9090",
+			MaxBodySize: 512000,
+			Provider:    ProviderOpenAI,
+			OpenAI: &OpenAIConfig{
+				APIKey:  "sk-test",
+				Model:   "text-embedding-3-small",
+				BaseURL: "https://api.openai.com/v1",
+			},
+			Log:       defaultLog,
+			MaxInputs: 2048,
+			Timeouts:  defaultTimeouts,
 		}
 	}
 
@@ -437,6 +472,46 @@ func TestConfigure(t *testing.T) {
 				c.Ollama.Endpoint = "https://ollama.example.com/api/embed"
 				return c
 			}(),
+		},
+		{
+			name:    "ollama endpoint is missing",
+			env:     ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": ""}),
+			wantErr: "missing OLLAMA_ENDPOINT_URL",
+		},
+		{
+			name:    "ollama endpoint is not an absolute http url",
+			env:     ollamaEnv(map[string]string{"OLLAMA_ENDPOINT_URL": "localhost:11434"}),
+			wantErr: "OLLAMA_ENDPOINT_URL must be an absolute http(s) URL",
+		},
+		{
+			name: "openai provider",
+			env:  openAIEnv(nil),
+			want: defaultOpenAIConfig(),
+		},
+		{
+			name:    "openai api key is missing",
+			env:     openAIEnv(map[string]string{"OPENAI_API_KEY": ""}),
+			wantErr: "missing OPENAI_API_KEY",
+		},
+		{
+			name:    "openai model is missing",
+			env:     openAIEnv(map[string]string{"OPENAI_MODEL": ""}),
+			wantErr: "missing OPENAI_MODEL",
+		},
+		{
+			name:    "openai base url is missing",
+			env:     openAIEnv(map[string]string{"OPENAI_BASE_URL": ""}),
+			wantErr: "missing OPENAI_BASE_URL",
+		},
+		{
+			name:    "openai base url is not an absolute http url",
+			env:     openAIEnv(map[string]string{"OPENAI_BASE_URL": "api.openai.com/v1"}),
+			wantErr: "OPENAI_BASE_URL must be an absolute http(s) URL",
+		},
+		{
+			name: "openai provider ignores ollama settings",
+			env:  openAIEnv(map[string]string{"OLLAMA_MODEL": "nomic-embed-text"}),
+			want: defaultOpenAIConfig(),
 		},
 		{
 			name:    "ollama model is missing",
