@@ -1,3 +1,12 @@
+# Sidecar example: the embeddings server runs next to a placeholder app in the
+# same pod, backed by the Ollama from the dev stack (compose.yaml) on the host.
+#
+# Prerequisites (see README, "Running as a sidecar"):
+#   make dev-up                                  # Ollama on host port 11434
+#   k3d cluster create embeddings
+#   docker build -t embeddings:dev .
+#   k3d image import embeddings:dev -c embeddings
+#   kubectl create secret generic embedder --from-literal=api-key=<key>
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -33,16 +42,13 @@ spec:
           restartPolicy: Always
           env:
             - name: PROVIDER
-              value: openai
-            - name: OPENAI_MODEL
-              value: text-embedding-3-small
-            - name: OPENAI_BASE_URL
-              value: https://api.openai.com/v1
-            - name: OPENAI_API_KEY
-              valueFrom:
-                secretKeyRef:
-                  key: openai-api-key
-                  name: embedder
+              value: ollama
+            # k3d resolves host.k3d.internal to the host, where compose
+            # publishes Ollama.
+            - name: OLLAMA_ENDPOINT_URL
+              value: http://host.k3d.internal:11434/api/embed
+            - name: OLLAMA_MODEL
+              value: nomic-embed-text
             - name: API_KEY
               valueFrom:
                 secretKeyRef:
@@ -78,4 +84,6 @@ spec:
       containers:
         - name: app
           image: curlimages/curl
-          command: ["sleep", "infinity"]
+          # PID 1 ignores SIGTERM unless it handles it, and a bare sleep would
+          # hold the pod for the whole grace period before the sidecar stops.
+          command: ["sh", "-c", "trap 'exit 0' TERM; sleep infinity & wait"]
