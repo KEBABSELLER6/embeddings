@@ -104,8 +104,10 @@ func startTestServerConn(t *testing.T, svc common.EmbeddingService) (*grpc.Clien
 }
 
 type testServer struct {
+	srv     *grpc.Server
 	conn    *grpc.ClientConn
 	hs      *health.Server
+	streams *StreamCanceller
 	capture *captureHandler
 	metrics *metrics.Metrics
 }
@@ -118,14 +120,16 @@ func startTestServerFull(t *testing.T, svc common.EmbeddingService) *testServer 
 	capture := &captureHandler{}
 	logger := slog.New(logging.NewContextHandler(capture))
 	m := metrics.New(prometheus.NewRegistry())
+	streams := NewStreamCanceller()
 
 	srv, hs := NewServer(Handlers{
-		Embed:          NewEmbeddingHandler(svc, NewErrorHandler(logger), testMaxInputs),
-		Logging:        NewLoggingHandler(logger),
-		Correlation:    NewCorrelationHandler(logger),
-		MetricsHandler: NewMetricsHandler(m),
-		MaxBodySize:    testMaxBodySize,
-		Logger:         logger,
+		Embed:           NewEmbeddingHandler(svc, NewErrorHandler(logger), testMaxInputs),
+		Logging:         NewLoggingHandler(logger),
+		Correlation:     NewCorrelationHandler(logger),
+		MetricsHandler:  NewMetricsHandler(m),
+		MaxBodySize:     testMaxBodySize,
+		Logger:          logger,
+		StreamCanceller: streams,
 	})
 
 	lis := bufconn.Listen(1 << 20)
@@ -141,7 +145,7 @@ func startTestServerFull(t *testing.T, svc common.EmbeddingService) *testServer 
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = conn.Close() })
 
-	return &testServer{conn: conn, hs: hs, capture: capture, metrics: m}
+	return &testServer{srv: srv, conn: conn, hs: hs, streams: streams, capture: capture, metrics: m}
 }
 
 // observationCount returns how many observations the duration histogram has

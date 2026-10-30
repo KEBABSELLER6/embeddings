@@ -19,17 +19,18 @@ const LogFormatJSON LogFormat = "json"
 const LogFormatText LogFormat = "text"
 
 type Config struct {
-	Port        string
-	MaxBodySize int64
-	Provider    Provider
-	Ollama      *OllamaConfig
-	OpenAI      *OpenAIConfig
-	Log         LogConfig
-	MaxInputs   int
-	Timeouts    TimeoutConfig
-	GRPCPort    string
-	MetricsPort string
-	BatchSize   int
+	Port           string
+	MaxBodySize    int64
+	Provider       Provider
+	Ollama         *OllamaConfig
+	OpenAI         *OpenAIConfig
+	Log            LogConfig
+	MaxInputs      int
+	Timeouts       TimeoutConfig
+	GRPCPort       string
+	MetricsPort    string
+	BatchSize      int
+	GRPCReflection bool
 }
 
 type OllamaConfig struct {
@@ -170,6 +171,16 @@ func Configure() (*Config, error) {
 	if batchSize < 0 {
 		return nil, fmt.Errorf("%s must not be negative", "BATCH_SIZE")
 	}
+	refl := os.Getenv("GRPC_REFLECTION")
+	var grpcRef bool
+	if refl == "" {
+		grpcRef = false
+	} else {
+		grpcRef, err = strconv.ParseBool(refl)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse GRPC_REFLECTION %w", err)
+		}
+	}
 
 	prvdr := os.Getenv("PROVIDER")
 	if prvdr == "" {
@@ -248,17 +259,18 @@ func Configure() (*Config, error) {
 	}
 
 	config := &Config{
-		Port:        port,
-		MaxBodySize: maxBodySize,
-		Provider:    provider,
-		Ollama:      ollamaConfig,
-		Log:         LogConfig{Format: format, Level: lvl},
-		MaxInputs:   int(maxInputs),
-		Timeouts:    TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout},
-		GRPCPort:    grpcPort,
-		MetricsPort: metricsPort,
-		BatchSize:   int(batchSize),
-		OpenAI:      openaiConfig,
+		Port:           port,
+		MaxBodySize:    maxBodySize,
+		Provider:       provider,
+		Ollama:         ollamaConfig,
+		Log:            LogConfig{Format: format, Level: lvl},
+		MaxInputs:      int(maxInputs),
+		Timeouts:       TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout},
+		GRPCPort:       grpcPort,
+		MetricsPort:    metricsPort,
+		BatchSize:      int(batchSize),
+		OpenAI:         openaiConfig,
+		GRPCReflection: grpcRef,
 	}
 
 	return config, nil

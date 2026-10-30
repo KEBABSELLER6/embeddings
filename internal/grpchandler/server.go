@@ -16,17 +16,28 @@ import (
 )
 
 type Handlers struct {
-	Embed          *EmbeddingHandler
-	Logging        *LoggingHandler
-	MaxBodySize    int
-	Correlation    *CorrelationHandler
-	MetricsHandler *MetricsHandler
-	Logger         *slog.Logger
+	Embed             *EmbeddingHandler
+	Logging           *LoggingHandler
+	MaxBodySize       int
+	Correlation       *CorrelationHandler
+	MetricsHandler    *MetricsHandler
+	Logger            *slog.Logger
+	StreamCanceller   *StreamCanceller
+	ReflectionEnabled bool
 }
 
 func NewServer(h Handlers) (*grpc.Server, *health.Server) {
+	logger := h.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	canceller := h.StreamCanceller
+	if canceller == nil {
+		canceller = NewStreamCanceller()
+	}
+
 	r := func(ctx context.Context, p any) (err error) {
-		h.Logger.ErrorContext(ctx, "grpc panic", "panic", p, "stack", string(debug.Stack()))
+		logger.ErrorContext(ctx, "grpc panic", "panic", p, "stack", string(debug.Stack()))
 		return status.Error(codes.Internal, "internal error")
 	}
 
@@ -40,11 +51,16 @@ func NewServer(h Handlers) (*grpc.Server, *health.Server) {
 			h.Logging.Logging(),
 			recovery.UnaryServerInterceptor(recovery.WithRecoveryHandlerContext(r)),
 		),
+		grpc.ChainStreamInterceptor(
+			canceller.Interceptor(),
+		),
 	)
 
 	healthpb.RegisterHealthServer(srv, hs)
 	embeddingsv1.RegisterEmbeddingServiceServer(srv, h.Embed)
-	reflection.Register(srv)
+	if h.ReflectionEnabled {
+		reflection.Register(srv)
+	}
 
 	return srv, hs
 }

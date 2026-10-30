@@ -26,6 +26,7 @@ var envKeys = []string{
 	"UPSTREAM_TIMEOUT",
 	"SHUTDOWN_TIMEOUT",
 	"BATCH_SIZE",
+	"GRPC_REFLECTION",
 }
 
 // setEnv clears every variable Configure reads, then applies env, so a test
@@ -348,6 +349,25 @@ func TestConfigure(t *testing.T) {
 			name:    "batch size is negative",
 			env:     ollamaEnv(map[string]string{"BATCH_SIZE": "-1"}),
 			wantErr: "BATCH_SIZE must not be negative",
+		},
+		{
+			name: "grpc reflection is enabled",
+			env:  ollamaEnv(map[string]string{"GRPC_REFLECTION": "true"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.GRPCReflection = true
+				return c
+			}(),
+		},
+		{
+			name: "grpc reflection is explicitly disabled",
+			env:  ollamaEnv(map[string]string{"GRPC_REFLECTION": "false"}),
+			want: defaultOllamaConfig(defaultLog),
+		},
+		{
+			name:    "grpc reflection is not a bool",
+			env:     ollamaEnv(map[string]string{"GRPC_REFLECTION": "maybe"}),
+			wantErr: "failed to parse GRPC_REFLECTION",
 		},
 		{
 			name:    "max inputs is not a number",

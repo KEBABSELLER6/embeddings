@@ -63,6 +63,7 @@ func run() error {
 		"grpc_port", conf.GRPCPort,
 		"metrics_port", conf.MetricsPort,
 		"batch_size", conf.BatchSize,
+		"grpc_reflection", conf.GRPCReflection,
 	)
 
 	embedder, err := NewEmbedder(conf, cli, conf.BatchSize)
@@ -97,13 +98,16 @@ func run() error {
 	}
 
 	grpcEH := grpchandler.NewErrorHandler(logger)
+	streams := grpchandler.NewStreamCanceller()
 	grpcSrv, grpcHs := grpchandler.NewServer(grpchandler.Handlers{
-		Embed:          grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
-		Logging:        grpchandler.NewLoggingHandler(logger),
-		Correlation:    grpchandler.NewCorrelationHandler(logger),
-		MaxBodySize:    int(conf.MaxBodySize),
-		MetricsHandler: grpchandler.NewMetricsHandler(metr),
-		Logger:         logger,
+		Embed:             grpchandler.NewEmbeddingHandler(embedder, grpcEH, conf.MaxInputs),
+		Logging:           grpchandler.NewLoggingHandler(logger),
+		Correlation:       grpchandler.NewCorrelationHandler(logger),
+		MaxBodySize:       int(conf.MaxBodySize),
+		MetricsHandler:    grpchandler.NewMetricsHandler(metr),
+		Logger:            logger,
+		StreamCanceller:   streams,
+		ReflectionEnabled: conf.GRPCReflection,
 	})
 	grpcAddr := fmt.Sprintf(":%s", conf.GRPCPort)
 	logger.Info("grpc server starting", "addr", grpcAddr)
@@ -149,6 +153,7 @@ func run() error {
 	stop()
 
 	grpcHs.Shutdown()
+	streams.Cancel()
 
 	logger.Info("shutting down server")
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), conf.Timeouts.Shutdown)
