@@ -22,6 +22,7 @@ var envKeys = []string{
 	"MAX_INPUTS",
 	"UPSTREAM_TIMEOUT",
 	"SHUTDOWN_TIMEOUT",
+	"BATCH_SIZE",
 }
 
 // setEnv clears every variable Configure reads, then applies env, so a test
@@ -67,6 +68,7 @@ func TestConfigure(t *testing.T) {
 			Log:       log,
 			MaxInputs: 2048,
 			Timeouts:  defaultTimeouts,
+			BatchSize: 0,
 		}
 	}
 
@@ -292,6 +294,25 @@ func TestConfigure(t *testing.T) {
 				c.Timeouts = TimeoutConfig{Upstream: 90 * time.Second, Shutdown: 2 * time.Minute}
 				return c
 			}(),
+		},
+		{
+			name: "batch size is set",
+			env:  ollamaEnv(map[string]string{"BATCH_SIZE": "64"}),
+			want: func() *Config {
+				c := defaultOllamaConfig(defaultLog)
+				c.BatchSize = 64
+				return c
+			}(),
+		},
+		{
+			name:    "batch size is not a number",
+			env:     ollamaEnv(map[string]string{"BATCH_SIZE": "lots"}),
+			wantErr: "failed to parse BATCH_SIZE",
+		},
+		{
+			name:    "batch size is negative",
+			env:     ollamaEnv(map[string]string{"BATCH_SIZE": "-1"}),
+			wantErr: "BATCH_SIZE must not be negative",
 		},
 		{
 			name:    "max inputs is not a number",

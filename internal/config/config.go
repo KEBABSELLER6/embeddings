@@ -27,6 +27,7 @@ type Config struct {
 	Timeouts    TimeoutConfig
 	GRPCPort    string
 	MetricsPort string
+	BatchSize   int
 }
 
 type OllamaConfig struct {
@@ -62,6 +63,19 @@ func positiveDurationEnv(key string, def time.Duration) (time.Duration, error) {
 }
 
 func positiveIntEnv(key string, def int64) (int64, error) {
+	parsed, err := intEnv(key, def)
+	if err != nil {
+		return 0, err
+	}
+
+	if parsed <= 0 {
+		return 0, fmt.Errorf("%s must be positive", key)
+	}
+
+	return parsed, nil
+}
+
+func intEnv(key string, def int64) (int64, error) {
 	i := os.Getenv(key)
 	if i == "" {
 		return def, nil
@@ -70,10 +84,6 @@ func positiveIntEnv(key string, def int64) (int64, error) {
 	parsed, err := strconv.ParseInt(i, 10, 64)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse %s: %w", key, err)
-	}
-
-	if parsed <= 0 {
-		return 0, fmt.Errorf("%s must be positive", key)
 	}
 
 	return parsed, nil
@@ -132,6 +142,13 @@ func Configure() (*Config, error) {
 	}
 	if upstreamTimeout >= shutdownTimeout {
 		return nil, fmt.Errorf("%s must be larger than %s", "SHUTDOWN_TIMEOUT", "UPSTREAM_TIMEOUT")
+	}
+	batchSize, err := intEnv("BATCH_SIZE", 0)
+	if err != nil {
+		return nil, err
+	}
+	if batchSize < 0 {
+		return nil, fmt.Errorf("%s must not be negative", "BATCH_SIZE")
 	}
 
 	prvdr := os.Getenv("PROVIDER")
@@ -200,6 +217,7 @@ func Configure() (*Config, error) {
 		Timeouts:    TimeoutConfig{Upstream: upstreamTimeout, Shutdown: shutdownTimeout},
 		GRPCPort:    grpcPort,
 		MetricsPort: metricsPort,
+		BatchSize:   int(batchSize),
 	}
 
 	return config, nil

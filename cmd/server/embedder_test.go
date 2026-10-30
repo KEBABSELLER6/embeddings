@@ -17,7 +17,7 @@ func TestNewEmbedder(t *testing.T) {
 			Ollama:   &config.OllamaConfig{Model: "test-model", Endpoint: "http://localhost:11434/api/embed"},
 		}
 
-		got, err := NewEmbedder(cfg, &http.Client{})
+		got, err := NewEmbedder(cfg, &http.Client{}, 0)
 
 		require.NoError(t, err)
 		assert.IsType(t, &service.OllamaService{}, got)
@@ -26,7 +26,7 @@ func TestNewEmbedder(t *testing.T) {
 	t.Run("ollama provider without ollama config is an error", func(t *testing.T) {
 		cfg := &config.Config{Provider: config.ProviderOllama}
 
-		got, err := NewEmbedder(cfg, &http.Client{})
+		got, err := NewEmbedder(cfg, &http.Client{}, 0)
 
 		require.Error(t, err)
 		assert.ErrorContains(t, err, "Ollama config is missing")
@@ -36,7 +36,7 @@ func TestNewEmbedder(t *testing.T) {
 	t.Run("unknown provider is an error", func(t *testing.T) {
 		cfg := &config.Config{Provider: config.Provider("nope")}
 
-		got, err := NewEmbedder(cfg, &http.Client{})
+		got, err := NewEmbedder(cfg, &http.Client{}, 0)
 
 		require.Error(t, err)
 		assert.ErrorContains(t, err, `unsupported provider "nope"`)
@@ -44,7 +44,7 @@ func TestNewEmbedder(t *testing.T) {
 	})
 
 	t.Run("empty provider is an error", func(t *testing.T) {
-		got, err := NewEmbedder(&config.Config{}, &http.Client{})
+		got, err := NewEmbedder(&config.Config{}, &http.Client{}, 0)
 
 		require.Error(t, err)
 		assert.Nil(t, got)
