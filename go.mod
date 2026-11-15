@@ -4,11 +4,11 @@ go 1.27
 
 require (
 	github.com/grpc-ecosystem/go-grpc-middleware/v2 v2.3.4
-	github.com/openai/openai-go/v3 v3.97.0
+	github.com/openai/openai-go/v3 v3.99.0
 	github.com/prometheus/client_golang v1.25.0
 	github.com/prometheus/client_model v0.6.3
 	github.com/stretchr/testify v1.12.1
-	golang.org/x/sync v0.24.0
+	golang.org/x/sync v0.25.0
 	google.golang.org/grpc v1.85.0
 	google.golang.org/protobuf v1.36.12
 )
