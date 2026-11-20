@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.0.1](https://github.com/KEBABSELLER6/embeddings/compare/v1.0.0...v1.0.1) (2026-11-20)
+
+
+### Bug Fixes
+
+* **deps:** update go dependencies ([d953231](https://github.com/KEBABSELLER6/embeddings/commit/d9532313455604e3575975fbbe8a99fa4f9e61cf))
+* **deps:** update go dependencies ([e751d22](https://github.com/KEBABSELLER6/embeddings/commit/e751d2224e2169c7950c2456f7037804e6b6a824))
+* **deps:** update go dependencies ([c1121dc](https://github.com/KEBABSELLER6/embeddings/commit/c1121dc98807cad694a0197ab048adc549671ea2))
+* **deps:** update go dependencies ([252a1e3](https://github.com/KEBABSELLER6/embeddings/commit/252a1e3ad886f44ebba654511c8e9c243de104bb))
+
 ## [1.0.0](https://github.com/KEBABSELLER6/embeddings/compare/v0.3.0...v1.0.0) (2026-10-30)
 
 
