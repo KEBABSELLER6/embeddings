@@ -30,6 +30,8 @@ github.com/openai/openai-go/v3 v3.105.0 h1:XX0QDIaMlBDr9iYGKXGgWYFtOFF5ffO4Sqtfx
 github.com/openai/openai-go/v3 v3.105.0/go.mod h1:dYJy3sozy5kqizqdbtk1xKLr2WBPDaw8woVu+cWmQIA=
 github.com/openai/openai-go/v3 v3.107.0 h1:cXqJlu4vYGUHMCwgt5TmNo6WyvTdyiwjbO2A4BvUhHE=
 github.com/openai/openai-go/v3 v3.107.0/go.mod h1:dYJy3sozy5kqizqdbtk1xKLr2WBPDaw8woVu+cWmQIA=
+github.com/openai/openai-go/v3 v3.108.0 h1:KkG+j4KiRbg199oTi9pLg5r9nwnJYvNn7YRwobNhog8=
+github.com/openai/openai-go/v3 v3.108.0/go.mod h1:dYJy3sozy5kqizqdbtk1xKLr2WBPDaw8woVu+cWmQIA=
 github.com/prometheus/client_golang v1.25.0 h1:cDtW1TcFsMi1RJc8khwCKB4VhzwV04aKqbYtNOXuiK0=
 github.com/prometheus/client_golang v1.25.0/go.mod h1:j2X/4/kaQHLPnmyEU8zjmkndo1T317VpCIQEml8LTKk=
 github.com/prometheus/client_model v0.6.3 h1:O0jaTVAYNxTHYInEPFJt5I3+sN8zqBtVMPTB1qyxiEo=
